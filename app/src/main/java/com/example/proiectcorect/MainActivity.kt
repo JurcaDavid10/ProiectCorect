@@ -161,7 +161,7 @@ fun sendNotification(context: Context, increasedStocks: List<Stock>, decreasedSt
     // Notificare pentru stocurile care au crescut
     if (increasedStocks.isNotEmpty()) {
         val increasedMessage = "The following stocks have increased by 2% or more:\n" +
-                increasedStocks.joinToString("\n") { "${it.symbol} ${it.percentageChange}%" } // Adăugăm și procentul
+                increasedStocks.joinToString("\n") { "${it.symbol} +${it.percentageChange}%" } // Adăugăm și procentul
         val increasedNotification = NotificationCompat.Builder(context, channelId)
             .setContentTitle("Stocks Increased")
             .setContentText(increasedMessage)
