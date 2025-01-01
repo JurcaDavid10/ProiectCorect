@@ -45,6 +45,9 @@ import android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS
 import android.os.Build
 import android.provider.Settings
 
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.core.app.NotificationManagerCompat
 
 
 data class Stock(
@@ -301,125 +304,6 @@ fun checkPermissionAndSendNotifications(context: Context, increasedStocks: List<
     }
 }
 
-
-@Composable
-fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadStocks: () -> Unit) {
-    var stocks by remember { mutableStateOf<List<Stock>>(emptyList()) }
-    val context = LocalContext.current
-
-    // Gestionăm luminozitatea și nivelul de lumină
-    val currentLightLevel = remember { mutableStateOf(lightLevel) }
-    val currentScreenBrightness = remember { mutableStateOf(screenBrightness / 100f) } // Conversie la procent
-
-    // Variabila care va ține textul pentru mod
-    val modeText = remember { mutableStateOf("Bright Mode") }
-
-    // Obțineți managerul de senzori
-    val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-    val lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
-
-    // Logica pentru actualizarea valorilor senzorului
-    val lightSensorListener = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent?) {
-            event?.let {
-                val light = it.values[0] // Valoarea luminozității
-                currentLightLevel.value = light // Actualizăm starea nivelului de lumină
-
-                // Calculăm luminozitatea pe baza luminii ambientale
-                val brightness = (light / 500f).coerceIn(0.1f, 1f) // Valoare între 0.1 și 1
-                currentScreenBrightness.value = 1f - brightness // Inversăm pentru moduri
-
-                // Schimbăm textul în funcție de nivelul de lumină
-                if (brightness < 0.5f) {
-                    modeText.value = "Bright Mode"
-                } else {
-                    modeText.value = "Dark Mode"
-                }
-            }
-        }
-
-        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-            // Nu este nevoie de implementare aici
-        }
-    }
-
-    // Înregistrarea și dezactivarea listener-ului
-    DisposableEffect(context) {
-        lightSensor?.let {
-            sensorManager.registerListener(
-                lightSensorListener,
-                it,
-                SensorManager.SENSOR_DELAY_NORMAL
-            )
-        }
-        onDispose {
-            sensorManager.unregisterListener(lightSensorListener)
-        }
-    }
-
-    // Setăm manual luminozitatea ecranului
-    val window = (context as Activity).window
-    val layoutParams = window.attributes
-    layoutParams.screenBrightness = currentScreenBrightness.value
-    window.attributes = layoutParams
-
-    // Încărcăm stocurile din Firestore
-    LaunchedEffect(Unit) {
-        val db = FirebaseFirestore.getInstance()
-        db.collection("stocks").get().addOnSuccessListener { result ->
-            val loadedStocks = result.documents.map { document ->
-                Stock(
-                    symbol = document.getString("symbol") ?: "",
-                    percentageChange = document.getDouble("percentageChange") ?: 0.0
-                )
-            }
-            stocks = loadedStocks
-        }
-    }
-
-    // Filtrăm stocurile care au o schimbare de 2% sau mai mult, pe creștere și scădere
-    val increasedStocks = stocks.filter { it.percentageChange >= 2.0 }
-    val decreasedStocks = stocks.filter { it.percentageChange <= -2.0 }
-
-    Column(
-        modifier = Modifier
-            .background(Color(0xFFE1BEE7))
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(text = "Welcome, $name!")
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Afișăm valoarea luminozității și textul care indică modul de luminozitate
-        Text(text = "Light Level: %.2f lux".format(currentLightLevel.value))
-        Text(text = "Screen Brightness: %.3f%%".format(currentScreenBrightness.value * 100)) // Afișăm în procent
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Afișăm textul "Bright Mode" sau "Dark Mode" în funcție de nivelul de lumină
-        Text(text = modeText.value)
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Buton pentru trimiterea notificărilor
-        Button(
-            onClick = {
-                checkPermissionAndSendNotifications(context, increasedStocks, decreasedStocks)
-            }
-        ) {
-            Text("Send Notifications")
-        }
-    }
-}
-
-
-
-
-
-
-
-
 @Composable
 fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit) {
     var email by remember { mutableStateOf("") }
@@ -533,6 +417,308 @@ fun RegisterScreen(auth: FirebaseAuth, onRegisterSuccess: () -> Unit) {
 
         if (errorMessage.isNotEmpty()) {
             Text(text = errorMessage, color = Color.Red)
+        }
+    }
+}
+
+@Composable
+fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadStocks: () -> Unit) {
+    var stocks by remember { mutableStateOf<List<Stock>>(emptyList()) }
+    var thresholdSettingsOpen by remember { mutableStateOf(false) }
+    var thresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+
+    val context = LocalContext.current
+
+    // Gestionăm luminozitatea și nivelul de lumină
+    val currentLightLevel = remember { mutableStateOf(lightLevel) }
+    val currentScreenBrightness = remember { mutableStateOf(screenBrightness / 100f) }
+    val modeText = remember { mutableStateOf("Bright Mode") }
+
+    // Obțineți managerul de senzori
+    val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    val lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
+
+    val lightSensorListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent?) {
+            event?.let {
+                val light = it.values[0]
+                currentLightLevel.value = light
+                val brightness = (light / 500f).coerceIn(0.1f, 1f)
+                currentScreenBrightness.value = 1f - brightness
+                modeText.value = if (brightness < 0.5f) "Bright Mode" else "Dark Mode"
+            }
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    DisposableEffect(context) {
+        lightSensor?.let {
+            sensorManager.registerListener(lightSensorListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+        }
+        onDispose {
+            sensorManager.unregisterListener(lightSensorListener)
+        }
+    }
+
+    val window = (context as Activity).window
+    val layoutParams = window.attributes
+    layoutParams.screenBrightness = currentScreenBrightness.value
+    window.attributes = layoutParams
+
+    LaunchedEffect(Unit) {
+        val db = FirebaseFirestore.getInstance()
+        db.collection("stocks").get().addOnSuccessListener { result ->
+            val loadedStocks = result.documents.map { document ->
+                Stock(
+                    symbol = document.getString("symbol") ?: "",
+                    percentageChange = document.getDouble("percentageChange") ?: 0.0
+                )
+            }
+            stocks = loadedStocks
+        }
+    }
+
+    if (thresholdSettingsOpen) {
+        StockThresholdSettingsScreen(
+            stocks = stocks,
+            context = context,
+            onSaveThresholds = { newThresholds -> // Callback pentru salvarea pragurilor
+                thresholds = newThresholds
+                saveThresholdsToFirestore(newThresholds) // Opțional: Salvează în Firestore
+                thresholdSettingsOpen = false // Închide ecranul de setări
+            }
+        )
+    }
+    else {
+        Column(
+            modifier = Modifier
+                .background(Color(0xFFE1BEE7))
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(text = "Welcome, $name!")
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = "Light Level: %.2f lux".format(currentLightLevel.value))
+            Text(text = "Screen Brightness: %.3f%%".format(currentScreenBrightness.value * 100))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(text = modeText.value)
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { thresholdSettingsOpen = true }) {
+                Text("Set Stock Thresholds")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Buton pentru notificări prag fix de +2%/-2%
+            Button(onClick = {
+                // Filtrăm stocurile care au crescut sau scăzut cu 2% sau mai mult
+                val increasedStocks = stocks.filter { it.percentageChange >= 2.0 }
+                val decreasedStocks = stocks.filter { it.percentageChange <= -2.0 }
+
+                // Trimitem notificările folosind funcția sendNotification
+                sendNotification(
+                    context = context,
+                    increasedStocks = increasedStocks,
+                    decreasedStocks = decreasedStocks
+                )
+            }) {
+                Text("Send Notifications for 2% Threshold")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = {
+                val filteredIncreasedStocks = stocks.filter { stock ->
+                    val threshold = thresholds[stock.symbol] ?: 0.0
+                    stock.percentageChange >= threshold && stock.percentageChange > 0
+                }
+
+                val filteredDecreasedStocks = stocks.filter { stock ->
+                    val threshold = thresholds[stock.symbol] ?: 0.0
+                    stock.percentageChange <= threshold && stock.percentageChange < 0
+                }
+
+                checkPermissionAndSendNotificationsCustomized(
+                    context = context,
+                    increasedStocks = filteredIncreasedStocks, // Transmite lista de obiecte Stock
+                    decreasedStocks = filteredDecreasedStocks  // Transmite lista de obiecte Stock
+                )
+            }) {
+                Text("Send Notifications")
+            }
+
+        }
+    }
+}
+
+
+
+@Composable
+fun StockThresholdSettingsScreen(
+    stocks: List<Stock>,
+    context: Context,
+    onSaveThresholds: (Map<String, Double>) -> Unit
+) {
+    var stockThresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(text = "Set Thresholds for Stocks", style = MaterialTheme.typography.titleLarge)
+
+        LazyColumn(
+            modifier = Modifier.weight(1f)
+        ) {
+            items(stocks) { stock ->
+                var sliderValue by remember { mutableStateOf(stockThresholds[stock.symbol] ?: 0.0) }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(text = "${stock.symbol}: ${"%.2f".format(sliderValue)}%")
+                    Slider(
+                        value = sliderValue.toFloat(),
+                        onValueChange = { sliderValue = it.toDouble() },
+                        valueRange = -100f..100f,
+                        steps = 200,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                stockThresholds = stockThresholds.toMutableMap().apply {
+                    put(stock.symbol, sliderValue)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Buton pentru salvarea pragurilor
+        Button(onClick = {
+            onSaveThresholds(stockThresholds)
+        }) {
+            Text("Salvează Praguri")
+        }
+
+        // Buton pentru notificări bazate pe praguri
+        Button(
+            onClick = {
+                // Creăm liste de obiecte Stock pentru increasedStocks și decreasedStocks
+                val increasedStocks = stocks.filter { stock ->
+                    val threshold = stockThresholds[stock.symbol] ?: 0.0
+                    stock.percentageChange >= threshold && stock.percentageChange > 0
+                }
+
+                val decreasedStocks = stocks.filter { stock ->
+                    val threshold = stockThresholds[stock.symbol] ?: 0.0
+                    stock.percentageChange <= threshold && stock.percentageChange < 0
+                }
+
+                // Apelăm funcția checkPermissionAndSendNotificationsCustomized cu obiectele Stock
+                checkPermissionAndSendNotificationsCustomized(
+                    context = context,
+                    increasedStocks = increasedStocks,
+                    decreasedStocks = decreasedStocks
+                )
+            },
+            modifier = Modifier.padding(16.dp)
+        ) {
+            Text("Trimite notificări pentru pragurile setate")
+        }
+
+    }
+}
+
+
+
+
+
+fun saveThresholdsToFirestore(thresholds: Map<String, Double>) {
+    val db = FirebaseFirestore.getInstance()
+    val thresholdsCollection = db.collection("stock_thresholds")
+
+    thresholds.forEach { (symbol, threshold) ->
+        thresholdsCollection.document(symbol).set(mapOf("threshold" to threshold))
+    }
+}
+
+fun sendNotificationsCustomized(
+    context: Context,
+    increasedStocks: List<Stock>,  // Modificat pentru a include și procentul
+    decreasedStocks: List<Stock>   // Modificat pentru a include și procentul
+) {
+    val notificationManager =
+        context.getSystemService(NotificationManager::class.java) as NotificationManager
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val channel = NotificationChannel(
+            "channel_02", "Channel 2", NotificationManager.IMPORTANCE_DEFAULT
+        )
+        notificationManager.createNotificationChannel(channel)
+    }
+
+    // Notificare pentru stocurile care au crescut
+    if (increasedStocks.isNotEmpty()) {
+        val stockUpdatesIncreased = increasedStocks.joinToString(separator = "\n") {
+            "${it.symbol} +${it.percentageChange}%"  // Afișăm și procentul
+        }
+        val notificationIncreased = NotificationCompat.Builder(context, "channel_02")
+            .setContentTitle("Stockuri care au crescut cu o valoare mai mare decat pragul minim")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("Stockurile care au crescut:\n$stockUpdatesIncreased")
+            )
+            .setSmallIcon(androidx.core.R.drawable.notification_icon_background)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(3, notificationIncreased)
+    }
+
+    // Notificare pentru stocurile care au scăzut
+    if (decreasedStocks.isNotEmpty()) {
+        val stockUpdatesDecreased = decreasedStocks.joinToString(separator = "\n") {
+            "${it.symbol} ${it.percentageChange}%"  // Afișăm și procentul
+        }
+        val notificationDecreased = NotificationCompat.Builder(context, "channel_02")
+            .setContentTitle("Stockuri care au scazut cu o valoare mai mare decat pragul minim")
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("Stockurile care au scăzut:\n$stockUpdatesDecreased")
+            )
+            .setSmallIcon(androidx.core.R.drawable.notification_icon_background)
+            .build()
+
+        NotificationManagerCompat.from(context).notify(4, notificationDecreased)
+    }
+}
+
+
+fun checkPermissionAndSendNotificationsCustomized(
+    context: Context,
+    increasedStocks: List<Stock>,   // Modificat pentru a accepta lista de obiecte Stock
+    decreasedStocks: List<Stock>    // Modificat pentru a accepta lista de obiecte Stock
+) {
+    if (ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED) {
+        sendNotificationsCustomized(context, increasedStocks, decreasedStocks)
+    } else {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(
+                context as? MainActivity ?: return,
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                1
+            )
+        } else {
+            sendNotificationsCustomized(context, increasedStocks, decreasedStocks)
         }
     }
 }
