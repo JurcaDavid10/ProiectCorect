@@ -70,22 +70,19 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Inițializăm senzorii și Firestore
+        // Inițializare senzori și Firestore
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT)
 
         auth = FirebaseAuth.getInstance()
         firestore = FirebaseFirestore.getInstance()
 
-        // Deconectăm utilizatorul la fiecare rulare a aplicației
         auth.signOut()
 
-        // Solicităm permisiunea pentru a modifica setările sistemului (luminozitatea ecranului)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(this)) {
             val intent = Intent(ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))
             startActivityForResult(intent, 200)
         } else {
-            // Permisiunea deja acordată sau pentru Android 6.0 sau mai târziu
             uploadStocksToFirestore()
         }
 
@@ -99,9 +96,18 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
                 when (currentScreen) {
                     "LoginRegisterChoice" -> {
+                        // Dezactivează senzorul de lumină
+                        sensorManager.unregisterListener(this)
+
                         LoginRegisterChoiceScreen(
-                            onNavigateToLogin = { currentScreen = "LoginScreen" },
-                            onNavigateToRegister = { currentScreen = "RegisterScreen" }
+                            onNavigateToLogin = {
+                                currentScreen = "LoginScreen"
+                                sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
+                            },
+                            onNavigateToRegister = {
+                                currentScreen = "RegisterScreen"
+                                sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
+                            }
                         )
                     }
                     "LoginScreen" -> {
@@ -117,18 +123,18 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                         )
                     }
                     "MainScreen" -> {
-                        // Transmiterea valorilor către MainScreen
                         MainScreen(
                             name = auth.currentUser?.email ?: "User",
-                            lightLevel = lightLevel,  // Transmiterea valorii lux
-                            screenBrightness = screenBrightness,  // Transmiterea luminozității ecranului
-                            onUploadStocks = {} // Încărcarea stocurilor e automată acum
+                            lightLevel = lightLevel,
+                            screenBrightness = screenBrightness,
+                            onUploadStocks = {}
                         )
                     }
                 }
             }
         }
     }
+
 
     override fun onResume() {
         super.onResume()
@@ -222,6 +228,15 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
 @Composable
 fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegister: () -> Unit) {
+    val context = LocalContext.current
+    val activity = context as? Activity
+    // Setează luminozitatea doar pentru această pagină
+    LaunchedEffect(Unit) {
+        val window = activity?.window
+        val layoutParams = window?.attributes
+        layoutParams?.screenBrightness = 1.0f // 1.0f reprezintă 100% luminozitate
+        window?.attributes = layoutParams
+    }
     Column(
         modifier = Modifier
             .background(Color(0xFFE1BEE7))
@@ -240,7 +255,6 @@ fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegiste
     }
 }
 
-// Funcția actualizată pentru trimiterea notificărilor
 // Funcția actualizată pentru trimiterea notificărilor
 fun sendNotification(context: Context, increasedStocks: List<Stock>, decreasedStocks: List<Stock>) {
     val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
