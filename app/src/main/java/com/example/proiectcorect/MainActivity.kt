@@ -190,40 +190,51 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
 
     fun uploadStocksToFirestore() {
+        // Lista actualizată de stockuri
         val stocks = listOf(
             Stock("AAPL", 2.3),
             Stock("GOOGL", -1.5),
             Stock("MSFT", 0.8),
-            Stock("AMZN", 3.2),
-            Stock("MSFT", 2.0),
-            Stock("TSLA", 3.5),
-            Stock("META", -2.5),
-            Stock("NFLX", -3.0),
-            Stock("NVDA", -2.1),
-            Stock("SPY", -2.3),
-            Stock("INTC", -2.0),
-            Stock("ORCL", 4.0),
-            Stock("BABA", 5.3),
-            Stock("ADBE", 1.8),
-            Stock("PYPL", -1.5),
-            Stock("CRM", 3.7),
-            Stock("SHOP", 2.4),
-            Stock("SQ", -2.8),
-            Stock("ZM", -2.0),
-            Stock("TWTR", 2.1),
             Stock("UBER", -3.5)
         )
 
-        for (stock in stocks) {
-            firestore.collection("stocks").document(stock.symbol)  // Folosim simbolul ca Document ID
-                .set(mapOf(
-                    "symbol" to stock.symbol,
-                    "percentageChange" to stock.percentageChange
-                ))
-                .addOnSuccessListener { Log.d("MainActivity", "Stock added: ${stock.symbol}") }
-                .addOnFailureListener { e -> Log.e("MainActivity", "Error adding stock: ${e.message}") }
-        }
+        // Referință la colecția Firestore
+        val stocksCollection = firestore.collection("stocks")
+
+        // Șterge toate documentele existente în colecția "stocks"
+        stocksCollection.get()
+            .addOnSuccessListener { querySnapshot ->
+                val batch = firestore.batch()
+
+                for (document in querySnapshot.documents) {
+                    batch.delete(document.reference)
+                }
+
+                // Aplică batch-ul de ștergere
+                batch.commit()
+                    .addOnSuccessListener {
+                        Log.d("MainActivity", "Toate documentele existente au fost șterse.")
+
+                        // Adaugă documentele noi în colecția "stocks"
+                        for (stock in stocks) {
+                            stocksCollection.document(stock.symbol)  // Folosim simbolul ca Document ID
+                                .set(mapOf(
+                                    "symbol" to stock.symbol,
+                                    "percentageChange" to stock.percentageChange
+                                ))
+                                .addOnSuccessListener { Log.d("MainActivity", "Stock added: ${stock.symbol}") }
+                                .addOnFailureListener { e -> Log.e("MainActivity", "Error adding stock: ${e.message}") }
+                        }
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("MainActivity", "Eroare la ștergerea documentelor: ${e.message}")
+                    }
+            }
+            .addOnFailureListener { e ->
+                Log.e("MainActivity", "Eroare la obținerea documentelor existente: ${e.message}")
+            }
     }
+
 }
 
 @Composable
