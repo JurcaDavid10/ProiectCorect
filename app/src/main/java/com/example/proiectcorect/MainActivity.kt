@@ -49,6 +49,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.core.app.NotificationManagerCompat
 
+//Raul start
+
+//Raul end
 
 data class Stock(
     val symbol: String = "",
@@ -191,12 +194,54 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     fun uploadStocksToFirestore() {
         // Lista actualizată de stockuri
-        val stocks = listOf(
-            Stock("AAPL", 2.3),
-            Stock("GOOGL", -1.5),
-            Stock("MSFT", 0.8),
-            Stock("UBER", -3.5)
-        )
+//        val stocks = listOf(
+//            Stock("AAPL", 2.3),
+//            Stock("GOOGL", -1.5),
+//            Stock("MSFT", 0.8),
+//            Stock("UBER", -1.5)
+//        )
+
+        // Sample stock symbols to fetch data for
+//        val stockSymbols  = listOf("AAPL", "GOOGL", "MSFT", "UBER")
+
+        //RAJ START
+//        val stockSymbols = listOf("IBM")
+//
+//
+//        val stockRepository = StockRepository()
+//
+//        // Fetch stock data
+//        stockRepository.fetchStockData("8BPKBCD5890PQZM8", stockSymbols ) { stocks ->
+//            // Handle the result here
+//            for (stock in stocks) {
+//                println("Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
+//                Log.d("StockInfo", "Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
+//            }
+
+//            // You can use this data to update the UI or store it in your database
+//            Toast.makeText(this, "Fetched stock data successfully!", Toast.LENGTH_SHORT).show()
+//        }
+        //RAJ END
+
+        val stockSymbols = listOf("AAPL", "GOOGL", "AMZN")
+
+        val stockRepository = StockRepository()
+
+        // List to collect stock data to upload to Firebase
+        val stockDataList = mutableListOf<Stock>()
+
+        // Fetch stock data
+        stockRepository.fetchStockData("ctslhk1r01qin3c02rbgctslhk1r01qin3c02rc0", stockSymbols) { stocks ->
+            // Handle the result here
+            for (stock in stocks) {
+                println("Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
+                Log.d("StockInfo", "Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
+
+                // Create a StockData object and add it to the list
+                val stockData = Stock(stock.symbol, stock.percentageChange)
+                stockDataList.add(stockData)
+            }
+        }
 
         // Referință la colecția Firestore
         val stocksCollection = firestore.collection("stocks")
@@ -216,7 +261,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                         Log.d("MainActivity", "Toate documentele existente au fost șterse.")
 
                         // Adaugă documentele noi în colecția "stocks"
-                        for (stock in stocks) {
+                        for (stock in stockDataList) {
                             stocksCollection.document(stock.symbol)  // Folosim simbolul ca Document ID
                                 .set(mapOf(
                                     "symbol" to stock.symbol,
