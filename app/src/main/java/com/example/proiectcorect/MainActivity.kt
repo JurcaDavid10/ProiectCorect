@@ -55,6 +55,7 @@ import androidx.core.app.NotificationManagerCompat
 
 data class Stock(
     val symbol: String = "",
+    val closingPrice: Double = 0.0,
     val percentageChange: Double = 0.0
 )
 
@@ -193,37 +194,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
 
     fun uploadStocksToFirestore() {
-        // Lista actualizată de stockuri
-//        val stocks = listOf(
-//            Stock("AAPL", 2.3),
-//            Stock("GOOGL", -1.5),
-//            Stock("MSFT", 0.8),
-//            Stock("UBER", -1.5)
-//        )
 
-        // Sample stock symbols to fetch data for
-//        val stockSymbols  = listOf("AAPL", "GOOGL", "MSFT", "UBER")
 
-        //RAJ START
-//        val stockSymbols = listOf("IBM")
-//
-//
-//        val stockRepository = StockRepository()
-//
-//        // Fetch stock data
-//        stockRepository.fetchStockData("8BPKBCD5890PQZM8", stockSymbols ) { stocks ->
-//            // Handle the result here
-//            for (stock in stocks) {
-//                println("Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
-//                Log.d("StockInfo", "Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
-//            }
 
-//            // You can use this data to update the UI or store it in your database
-//            Toast.makeText(this, "Fetched stock data successfully!", Toast.LENGTH_SHORT).show()
-//        }
-        //RAJ END
-
-        val stockSymbols = listOf("AAPL", "GOOGL", "AMZN")
+        val stockSymbols = listOf("AAPL", "GOOGL", "AMZN", "UBER", "TSLA")
 
         val stockRepository = StockRepository()
 
@@ -238,7 +212,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 Log.d("StockInfo", "Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
 
                 // Create a StockData object and add it to the list
-                val stockData = Stock(stock.symbol, stock.percentageChange)
+                val stockData = Stock(stock.symbol, stock.closingPrice, stock.percentageChange)
                 stockDataList.add(stockData)
             }
         }
@@ -265,6 +239,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                             stocksCollection.document(stock.symbol)  // Folosim simbolul ca Document ID
                                 .set(mapOf(
                                     "symbol" to stock.symbol,
+                                    "closingPrice" to stock.closingPrice,
                                     "percentageChange" to stock.percentageChange
                                 ))
                                 .addOnSuccessListener { Log.d("MainActivity", "Stock added: ${stock.symbol}") }
