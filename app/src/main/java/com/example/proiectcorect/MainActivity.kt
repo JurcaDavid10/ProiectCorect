@@ -1,5 +1,6 @@
 package com.example.proiectcorect
 
+
 import android.app.Activity
 import android.os.Bundle
 import android.util.Log
@@ -699,6 +700,16 @@ fun sendNotificationsCustomized(
     increasedStocks: List<Stock>,  // Modificat pentru a include și procentul
     decreasedStocks: List<Stock>   // Modificat pentru a include și procentul
 ) {
+    // Verificare permisiune pentru notificări (Android 13+)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e("NotificationError", "Permisiunea pentru notificări nu este acordată!")
+            return // Ieșim din funcție dacă permisiunea nu este acordată
+        }
+    }
+
     val notificationManager =
         context.getSystemService(NotificationManager::class.java) as NotificationManager
 
@@ -715,15 +726,14 @@ fun sendNotificationsCustomized(
             "${it.symbol} +${it.percentageChange}%"  // Afișăm și procentul
         }
         val notificationIncreased = NotificationCompat.Builder(context, "channel_02")
-            .setContentTitle("Stockuri care au crescut cu o valoare mai mare decat pragul minim")
+            .setContentTitle("Stockuri care au crescut cu o valoare mai mare decât pragul minim")
             .setStyle(
                 NotificationCompat.BigTextStyle()
                     .bigText("Stockurile care au crescut:\n$stockUpdatesIncreased")
             )
-            .setSmallIcon(androidx.core.R.drawable.notification_icon_background)
-            .build()
+            .setSmallIcon(R.drawable.ic_notification)
 
-        NotificationManagerCompat.from(context).notify(3, notificationIncreased)
+        NotificationManagerCompat.from(context).notify(3, notificationIncreased.build())
     }
 
     // Notificare pentru stocurile care au scăzut
@@ -732,17 +742,18 @@ fun sendNotificationsCustomized(
             "${it.symbol} ${it.percentageChange}%"  // Afișăm și procentul
         }
         val notificationDecreased = NotificationCompat.Builder(context, "channel_02")
-            .setContentTitle("Stockuri care au scazut cu o valoare mai mare decat pragul minim")
+            .setContentTitle("Stockuri care au scăzut cu o valoare mai mare decât pragul minim")
             .setStyle(
                 NotificationCompat.BigTextStyle()
                     .bigText("Stockurile care au scăzut:\n$stockUpdatesDecreased")
             )
-            .setSmallIcon(androidx.core.R.drawable.notification_icon_background)
-            .build()
+            .setSmallIcon(R.drawable.ic_notification)
 
-        NotificationManagerCompat.from(context).notify(4, notificationDecreased)
+        NotificationManagerCompat.from(context).notify(4, notificationDecreased.build())
     }
 }
+
+
 
 
 fun checkPermissionAndSendNotificationsCustomized(
