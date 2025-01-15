@@ -50,9 +50,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.core.app.NotificationManagerCompat
 
-//Raul start
 
-//Raul end
 
 data class Stock(
     val symbol: String = "",
