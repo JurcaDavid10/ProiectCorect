@@ -1,4 +1,4 @@
-////RJ START
+//RJ START
 //package com.example.proiectcorect
 //
 //import android.util.Log
@@ -70,7 +70,7 @@
 //        return changePercentage
 //    }
 //}
-////RJ END
+//RJ END
 
 package com.example.proiectcorect
 

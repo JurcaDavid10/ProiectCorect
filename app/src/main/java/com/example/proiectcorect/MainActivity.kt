@@ -1,5 +1,13 @@
 package com.example.proiectcorect
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
+
 
 import android.app.Activity
 import android.os.Bundle
@@ -49,10 +57,8 @@ import android.provider.Settings
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.core.app.NotificationManagerCompat
+import com.google.firebase.messaging.FirebaseMessaging
 
-//Raul start
-
-//Raul end
 
 data class Stock(
     val symbol: String = "",
@@ -82,62 +88,96 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         auth = FirebaseAuth.getInstance()
         firestore = FirebaseFirestore.getInstance()
 
+        // 🔵 2️⃣ Aici obții token-ul FCM
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val token = task.result
+                Log.d("FCM", "Token-ul FCM este: $token")
+
+                // 🔵 Salvăm token-ul sub documentul utilizatorului curent (în colecția "users")
+                val userId = FirebaseAuth.getInstance().currentUser?.uid
+                if (userId != null) {
+                    val db = FirebaseFirestore.getInstance()
+                    val userDocRef = db.collection("users").document(userId)
+                    userDocRef.update("fcmToken", token)
+                        .addOnSuccessListener { Log.d("FCM", "Token salvat cu succes!") }
+                        .addOnFailureListener { e -> Log.e("FCM", "Eroare la salvare: ${e.message}") }
+                }
+            } else {
+                Log.w("FCM", "Eroare la obținerea token-ului", task.exception)
+            }
+        }
+
         auth.signOut()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.System.canWrite(this)) {
             val intent = Intent(ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))
             startActivityForResult(intent, 200)
         } else {
-            uploadStocksToFirestore()
-        }
+            uploadStocksToFirestore() {
+                setContent {
+                    ProiectCorectTheme {
+                        var currentScreen by remember { mutableStateOf("LoginRegisterChoice") }
 
-        setContent {
-            ProiectCorectTheme {
-                var currentScreen by remember { mutableStateOf("LoginRegisterChoice") }
+                        if (auth.currentUser != null) {
+                            currentScreen = "MainScreen"
+                        }
 
-                if (auth.currentUser != null) {
-                    currentScreen = "MainScreen"
-                }
+                        when (currentScreen) {
+                            "LoginRegisterChoice" -> {
+                                // Dezactivează senzorul de lumină
+                                sensorManager.unregisterListener(this)
 
-                when (currentScreen) {
-                    "LoginRegisterChoice" -> {
-                        // Dezactivează senzorul de lumină
-                        sensorManager.unregisterListener(this)
-
-                        LoginRegisterChoiceScreen(
-                            onNavigateToLogin = {
-                                currentScreen = "LoginScreen"
-                                sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
-                            },
-                            onNavigateToRegister = {
-                                currentScreen = "RegisterScreen"
-                                sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
+                                LoginRegisterChoiceScreen(
+                                    onNavigateToLogin = {
+                                        currentScreen = "LoginScreen"
+                                        sensorManager.registerListener(
+                                            this,
+                                            lightSensor,
+                                            SensorManager.SENSOR_DELAY_NORMAL
+                                        )
+                                    },
+                                    onNavigateToRegister = {
+                                        currentScreen = "RegisterScreen"
+                                        sensorManager.registerListener(
+                                            this,
+                                            lightSensor,
+                                            SensorManager.SENSOR_DELAY_NORMAL
+                                        )
+                                    }
+                                )
                             }
-                        )
-                    }
-                    "LoginScreen" -> {
-                        LoginScreen(
-                            auth = auth,
-                            onLoginSuccess = { currentScreen = "MainScreen" }
-                        )
-                    }
-                    "RegisterScreen" -> {
-                        RegisterScreen(
-                            auth = auth,
-                            onRegisterSuccess = { currentScreen = "LoginRegisterChoice" }
-                        )
-                    }
-                    "MainScreen" -> {
-                        MainScreen(
-                            name = auth.currentUser?.email ?: "User",
-                            lightLevel = lightLevel,
-                            screenBrightness = screenBrightness,
-                            onUploadStocks = {}
-                        )
+
+                            "LoginScreen" -> {
+                                LoginScreen(
+                                    auth = auth,
+                                    onLoginSuccess = { currentScreen = "MainScreen" }
+                                )
+                            }
+
+                            "RegisterScreen" -> {
+                                RegisterScreen(
+                                    auth = auth,
+                                    onRegisterSuccess = { currentScreen = "LoginRegisterChoice" }
+                                )
+                            }
+
+                            "MainScreen" -> {
+                                listenForStockUpdates()
+                                MainScreen(
+                                    name = auth.currentUser?.email ?: "User",
+                                    lightLevel = lightLevel,
+                                    screenBrightness = screenBrightness,
+                                    onUploadStocks = {}
+                                )
+                            }
+                        }
                     }
                 }
             }
         }
+
+
     }
 
 
@@ -179,135 +219,164 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         // Aplicăm modificările la setările de luminiscență
         val layoutParams = window.attributes
-        layoutParams.screenBrightness = brightness / 255f  // Transformăm valoarea într-un interval între 0 și 1
+        layoutParams.screenBrightness =
+            brightness / 255f  // Transformăm valoarea într-un interval între 0 și 1
         window.attributes = layoutParams
 
         // Calculăm valoarea procentuală și o afișăm
         screenBrightness = (brightness / 255f * 100).toInt()  // Luminozitatea în procente
     }
 
+    fun listenForStockUpdates() {
+        val db = FirebaseFirestore.getInstance()
+        db.collection("stocks").addSnapshotListener { snapshot, _ ->
+            if (snapshot != null && !snapshot.isEmpty) {
+                val stocks = snapshot.documents.map { document ->
+                    Stock(
+                        symbol = document.getString("symbol") ?: "",
+                        percentageChange = document.getDouble("percentageChange") ?: 0.0
+                    )
+                }
 
+                // Încarcă pragurile și trimite notificările
+                db.collection("stocksthreshold").get().addOnSuccessListener { thresholdResult ->
+                    val thresholds = thresholdResult.documents.associate {
+                        it.getString("symbol")!! to (it.getDouble("threshold") ?: 0.0)
+                    }
 
+                    val increasedStocks = stocks.filter { stock ->
+                        val threshold = thresholds[stock.symbol] ?: 0.0
+                        stock.percentageChange >= threshold && stock.percentageChange > 0
+                    }
+                    val decreasedStocks = stocks.filter { stock ->
+                        val threshold = thresholds[stock.symbol] ?: 0.0
+                        stock.percentageChange <= threshold && stock.percentageChange < 0
+                    }
 
-
-
-
-
-
-    fun uploadStocksToFirestore() {
-        val stockSymbols = listOf("AAPL", "GOOGL", "AMZN", "UBER", "TSLA", "TWTR", "MSFT")
-        val stockRepository = StockRepository()
-        val stockDataList = mutableListOf<Stock>()
-
-        // Fetch stock data
-        stockRepository.fetchStockData("ctslhk1r01qin3c02rbgctslhk1r01qin3c02rc0", stockSymbols) { stocks ->
-            for (stock in stocks) {
-                println("Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
-                Log.d("StockInfo", "Stock: ${stock.symbol}, Change: ${stock.percentageChange}%")
-                val stockData = Stock(stock.symbol, stock.closingPrice, stock.percentageChange)
-                stockDataList.add(stockData)
+                    checkPermissionAndSendNotificationsCustomized(
+                        context = this@MainActivity,
+                        increasedStocks = increasedStocks,
+                        decreasedStocks = decreasedStocks
+                    )
+                }
             }
         }
-
-        // Referință la colecția "stocks"
-        val stocksCollection = firestore.collection("stocks")
-        // Referință la colecția "stocksthreshold"
-        val stockThresholdCollection = firestore.collection("stocksthreshold")
-
-        // Șterge toate documentele existente în colecția "stocks"
-        stocksCollection.get()
-            .addOnSuccessListener { querySnapshot ->
-                val batch = firestore.batch()
-
-                for (document in querySnapshot.documents) {
-                    batch.delete(document.reference)
-                }
-
-                // Aplică batch-ul de ștergere
-                batch.commit()
-                    .addOnSuccessListener {
-                        Log.d("MainActivity", "Toate documentele existente din 'stocks' au fost șterse.")
-
-                        // Adaugă documentele noi în colecția "stocks"
-                        for (stock in stockDataList) {
-                            stocksCollection.document(stock.symbol)
-                                .set(
-                                    mapOf(
-                                        "symbol" to stock.symbol,
-                                        "closingPrice" to stock.closingPrice,
-                                        "percentageChange" to stock.percentageChange
-                                    )
-                                )
-                                .addOnSuccessListener {
-                                    Log.d("MainActivity", "Stock added: ${stock.symbol}")
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e("MainActivity", "Error adding stock: ${e.message}")
-                                }
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        Log.e("MainActivity", "Eroare la ștergerea documentelor: ${e.message}")
-                    }
-            }
-            .addOnFailureListener { e ->
-                Log.e("MainActivity", "Eroare la obținerea documentelor existente: ${e.message}")
-            }
-
-        // Șterge toate documentele existente în colecția "stocksthreshold"
-        stockThresholdCollection.get()
-            .addOnSuccessListener { querySnapshot ->
-                val batch = firestore.batch()
-
-                for (document in querySnapshot.documents) {
-                    batch.delete(document.reference)
-                }
-
-                // Aplică batch-ul de ștergere
-                batch.commit()
-                    .addOnSuccessListener {
-                        Log.d("MainActivity", "Toate documentele existente din 'stocksthreshold' au fost șterse.")
-
-                        // Adaugă documentele noi în colecția "stocksthreshold"
-                        for (stock in stockDataList) {
-                            stockThresholdCollection.document(stock.symbol)
-                                .set(
-                                    mapOf(
-                                        "symbol" to stock.symbol,
-                                        "threshold" to 0.0 // Setează un prag inițial (ex: 0.0)
-                                    )
-                                )
-                                .addOnSuccessListener {
-                                    Log.d("MainActivity", "Threshold added for stock: ${stock.symbol}")
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e("MainActivity", "Error adding threshold: ${e.message}")
-                                }
-                        }
-                    }
-                    .addOnFailureListener { e ->
-                        Log.e("MainActivity", "Eroare la ștergerea documentelor: ${e.message}")
-                    }
-            }
-            .addOnFailureListener { e ->
-                Log.e("MainActivity", "Eroare la obținerea documentelor existente: ${e.message}")
-            }
     }
 
+    fun uploadStocksToFirestore(onComplete: () -> Unit) {
+        val stockSymbols = listOf("AAPL","GOOGL","TWTR","TSLA","UBER")
+        val stockRepository = StockRepository()
 
+        stockRepository.fetchStockData(
+            "d0u47upr01qgk5llqj6gd0u47upr01qgk5llqj70",
+            stockSymbols
+        ) { stocks ->
+            Log.d("MainActivity", "Stockuri primite: ${stocks.size}")
+            stocks.forEach {
+                Log.d(
+                    "MainActivity",
+                    "Stock: ${it.symbol}, Closing: ${it.closingPrice}, Change: ${it.percentageChange}"
+                )
+            }
+
+            val stocksCollection = firestore.collection("stocks")
+            val stockThresholdCollection = firestore.collection("stocksthreshold")
+
+            var completedTasks = 0
+            val totalTasks = 2
+
+            fun checkIfDone() {
+                completedTasks++
+                if (completedTasks == totalTasks) {
+                    Log.d("MainActivity", "Upload complet pentru ambele colecții!")
+                    onComplete()
+                }
+            }
+
+            // 🔵 Upload la stocks
+            stocksCollection.get().addOnSuccessListener { querySnapshot ->
+                val batch = firestore.batch()
+                for (document in querySnapshot.documents) {
+                    batch.delete(document.reference)
+                }
+                batch.commit().addOnSuccessListener {
+                    Log.d("MainActivity", "Toate documentele din 'stocks' au fost șterse.")
+
+                    val total = stocks.size
+                    var completed = 0
+                    for (stock in stocks) {
+                        stocksCollection.document(stock.symbol)
+                            .set(
+                                mapOf(
+                                    "symbol" to stock.symbol,
+                                    "closingPrice" to stock.closingPrice,
+                                    "percentageChange" to stock.percentageChange
+                                )
+                            )
+                            .addOnSuccessListener {
+                                Log.d("MainActivity", "Stock added: ${stock.symbol}")
+                                completed++
+                                if (completed == total) {
+                                    Log.d(
+                                        "MainActivity",
+                                        "Toate stocurile au fost adăugate în 'stocks'"
+                                    )
+                                    checkIfDone()
+                                }
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("MainActivity", "Error adding stock: ${e.message}")
+                            }
+                    }
+                }
+            }
+
+            // 🔵 Upload la stocksthreshold (cu aceleași simboluri corecte)
+            stockThresholdCollection.get().addOnSuccessListener { querySnapshot ->
+                val batch = firestore.batch()
+                for (document in querySnapshot.documents) {
+                    batch.delete(document.reference)
+                }
+                batch.commit().addOnSuccessListener {
+                    Log.d("MainActivity", "Toate documentele din 'stocksthreshold' au fost șterse.")
+
+                    val total = stocks.size
+                    var completed = 0
+                    for (stock in stocks) {
+                        stockThresholdCollection.document(stock.symbol)
+                            .set(
+                                mapOf(
+                                    "symbol" to stock.symbol,
+                                    "threshold" to 0.0
+                                )
+                            )
+                            .addOnSuccessListener {
+                                Log.d("MainActivity", "Threshold added for stock: ${stock.symbol}")
+                                completed++
+                                if (completed == total) {
+                                    Log.d(
+                                        "MainActivity",
+                                        "Toate pragurile au fost adăugate în 'stocksthreshold'"
+                                    )
+                                    checkIfDone()
+                                }
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("MainActivity", "Error adding threshold: ${e.message}")
+                            }
+                    }
+                }
+            }
+        }
+    }
 }
 
-@Composable
+
+    @Composable
 fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegister: () -> Unit) {
     val context = LocalContext.current
-    val activity = context as? Activity
-    // Setează luminozitatea doar pentru această pagină
-    LaunchedEffect(Unit) {
-        val window = activity?.window
-        val layoutParams = window?.attributes
-        layoutParams?.screenBrightness = 1.0f // 1.0f reprezintă 100% luminozitate
-        window?.attributes = layoutParams
-    }
+    var predictionResult by remember { mutableStateOf<String?>(null) } // Stocăm răspunsul API
+
     Column(
         modifier = Modifier
             .background(Color(0xFFE1BEE7))
@@ -316,6 +385,25 @@ fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegiste
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        // Buton pentru predicție
+//        Button(onClick = {
+//            fetchPrediction { result ->
+//                predictionResult = result // Salvăm răspunsul pentru afișare
+//            }
+//        }) {
+//            Text("Predictie S&P 500")
+//        }
+//
+//
+//        Spacer(modifier = Modifier.height(16.dp))
+//
+//        // Afișăm predicția dacă este disponibilă
+//        predictionResult?.let {
+//            Text(text = "Predicție: $it", color = Color.Black)
+//        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         Button(onClick = { onNavigateToLogin() }) {
             Text("Login")
         }
@@ -325,6 +413,43 @@ fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegiste
         }
     }
 }
+
+fun fetchPrediction(onResult: (String) -> Unit) {
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            // Endpoint-ul API-ului unde returnezi prețul prezis pentru S&P 500
+            val url = URL("https://us-central1-proiectcorect-b09a1.cloudfunctions.net/get_stock_prediction")
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+
+            val responseCode = connection.responseCode
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                val jsonResponse = JSONObject(response)
+                val predictedPrice = jsonResponse.getDouble("predicted_price")
+
+                val message = jsonResponse.getString("message") // Obține direct mesajul
+                //val result = "📈 Prețul prezis pentru S&P 500: $predictedPrice USD"
+
+                withContext(Dispatchers.Main) {
+                    onResult(message) // Trimite rezultatul către UI
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    onResult("Eroare la obținerea predicției!")
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            withContext(Dispatchers.Main) {
+                onResult("Eroare: ${e.message}")
+            }
+        }
+    }
+}
+
+
+
 
 // Funcția actualizată pentru trimiterea notificărilor
 fun sendNotification(context: Context, increasedStocks: List<Stock>, decreasedStocks: List<Stock>) {
@@ -584,6 +709,24 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // Buton de Predictie
+            var predictionResult by remember { mutableStateOf<String?>(null) }
+
+            Button(onClick = {
+                fetchPrediction { result ->
+                    predictionResult = result
+                }
+            }) {
+                Text("Predictie S&P 500")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+// Afișează predicția dacă există
+            predictionResult?.let {
+                Text(text = "$it", color = Color.Black)
+            }
+
             Text(text = "Welcome, $name!")
             Spacer(modifier = Modifier.height(16.dp))
             Text(text = "Light Level: %.2f lux".format(currentLightLevel.value))
@@ -635,6 +778,7 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
             }
 
         }
+
     }
 }
 
@@ -727,12 +871,20 @@ fun StockThresholdSettingsScreen(
 
 fun saveThresholdsToFirestore(thresholds: Map<String, Double>) {
     val db = FirebaseFirestore.getInstance()
-    val thresholdsCollection = db.collection("stock_thresholds")
+
+    // 🔵 Actualizăm colecția „stockthreshold” (sau „stock_thresholds” – alege una!)
+    val thresholdsCollection = db.collection("stocksthreshold")
 
     thresholds.forEach { (symbol, threshold) ->
-        thresholdsCollection.document(symbol).set(mapOf("threshold" to threshold))
+        thresholdsCollection.document(symbol).set(
+            mapOf(
+                "symbol" to symbol,
+                "threshold" to threshold
+            )
+        )
     }
 }
+
 
 fun sendNotificationsCustomized(
     context: Context,

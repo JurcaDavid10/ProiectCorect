@@ -38,6 +38,15 @@
             </intent-filter>
         </activity>
 
+        <!-- 🔵 Adaugă aici serviciul FirebaseMessaging -->
+        <service
+            android:name=".MyFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- Definirea iconiței pentru notificările Firebase (folosim iconița implicită) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
