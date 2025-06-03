@@ -58,6 +58,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessaging
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 data class Stock(
@@ -114,15 +117,11 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             val intent = Intent(ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName"))
             startActivityForResult(intent, 200)
         } else {
+            val initialScreen = if (auth.currentUser != null) "MainScreen" else "LoginRegisterChoice"
             uploadStocksToFirestore() {
                 setContent {
+                    var currentScreen by remember { mutableStateOf(initialScreen) }
                     ProiectCorectTheme {
-                        var currentScreen by remember { mutableStateOf("LoginRegisterChoice") }
-
-                        if (auth.currentUser != null) {
-                            currentScreen = "MainScreen"
-                        }
-
                         when (currentScreen) {
                             "LoginRegisterChoice" -> {
                                 // Dezactivează senzorul de lumină
@@ -168,7 +167,20 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                                     name = auth.currentUser?.email ?: "User",
                                     lightLevel = lightLevel,
                                     screenBrightness = screenBrightness,
-                                    onUploadStocks = {}
+                                    onUploadStocks = {},
+                                    onNavigateToSecondScreen = { currentScreen = "SecondScreen" }
+                                )
+                            }
+                            "SecondScreen" -> {
+                                SecondScreen(
+                                    onBack = { currentScreen = "MainScreen" },
+                                    onNavigateToPredictionHistory = { currentScreen = "PredictionHistory" }
+                                )
+                            }
+
+                            "PredictionHistory" -> {
+                                PredictionHistoryScreen(
+                                    onBack = { currentScreen = "SecondScreen" }
                                 )
                             }
                         }
@@ -372,7 +384,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 }
 
 
-    @Composable
+@Composable
 fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegister: () -> Unit) {
     val context = LocalContext.current
     var predictionResult by remember { mutableStateOf<String?>(null) } // Stocăm răspunsul API
@@ -385,22 +397,7 @@ fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegiste
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Buton pentru predicție
-//        Button(onClick = {
-//            fetchPrediction { result ->
-//                predictionResult = result // Salvăm răspunsul pentru afișare
-//            }
-//        }) {
-//            Text("Predictie S&P 500")
-//        }
-//
-//
-//        Spacer(modifier = Modifier.height(16.dp))
-//
-//        // Afișăm predicția dacă este disponibilă
-//        predictionResult?.let {
-//            Text(text = "Predicție: $it", color = Color.Black)
-//        }
+
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -417,7 +414,6 @@ fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegiste
 fun fetchPrediction(onResult: (String) -> Unit) {
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            // Endpoint-ul API-ului unde returnezi prețul prezis pentru S&P 500
             val url = URL("https://us-central1-proiectcorect-b09a1.cloudfunctions.net/get_stock_prediction")
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
@@ -427,12 +423,41 @@ fun fetchPrediction(onResult: (String) -> Unit) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
                 val jsonResponse = JSONObject(response)
                 val predictedPrice = jsonResponse.getDouble("predicted_price")
+                val message = jsonResponse.getString("message")
 
-                val message = jsonResponse.getString("message") // Obține direct mesajul
-                //val result = "📈 Prețul prezis pentru S&P 500: $predictedPrice USD"
+                // 🔵 Data de azi
+                val date = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).format(Date())
+
+                // 🔵 Obținem userId-ul utilizatorului curent
+                val userId = FirebaseAuth.getInstance().currentUser?.uid
+                if (userId != null) {
+                    val db = FirebaseFirestore.getInstance()
+                    val predictionsRef = db.collection("users").document(userId).collection("predictions")
+                    val predictionData = hashMapOf(
+                        "date" to date,
+                        "predictedPrice" to predictedPrice
+                    )
+
+                    // 🔵 Verificăm dacă există deja predicție pentru acea zi
+                    predictionsRef.document(date).get().addOnSuccessListener { documentSnapshot ->
+                        if (!documentSnapshot.exists()) {
+                            predictionsRef.document(date).set(predictionData)
+                                .addOnSuccessListener {
+                                    Log.d("Prediction", "Predicția a fost salvată în contul utilizatorului!")
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("Prediction", "Eroare la salvare: ${e.message}")
+                                }
+                        } else {
+                            Log.d("Prediction", "Predicția pentru $date există deja în contul utilizatorului.")
+                        }
+                    }
+                } else {
+                    Log.e("Prediction", "Eroare: utilizatorul nu este autentificat!")
+                }
 
                 withContext(Dispatchers.Main) {
-                    onResult(message) // Trimite rezultatul către UI
+                    onResult(message)
                 }
             } else {
                 withContext(Dispatchers.Main) {
@@ -447,6 +472,9 @@ fun fetchPrediction(onResult: (String) -> Unit) {
         }
     }
 }
+
+
+
 
 
 
@@ -632,7 +660,7 @@ fun RegisterScreen(auth: FirebaseAuth, onRegisterSuccess: () -> Unit) {
 }
 
 @Composable
-fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadStocks: () -> Unit) {
+fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadStocks: () -> Unit,onNavigateToSecondScreen: () -> Unit) {
     var stocks by remember { mutableStateOf<List<Stock>>(emptyList()) }
     var thresholdSettingsOpen by remember { mutableStateOf(false) }
     var thresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
@@ -709,23 +737,10 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Buton de Predictie
-            var predictionResult by remember { mutableStateOf<String?>(null) }
-
-            Button(onClick = {
-                fetchPrediction { result ->
-                    predictionResult = result
-                }
-            }) {
-                Text("Predictie S&P 500")
+            Button(onClick = onNavigateToSecondScreen) { // 👈 folosește direct callback-ul
+                Text("Mergi la Second Screen")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-// Afișează predicția dacă există
-            predictionResult?.let {
-                Text(text = "$it", color = Color.Black)
-            }
 
             Text(text = "Welcome, $name!")
             Spacer(modifier = Modifier.height(16.dp))
@@ -782,6 +797,99 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
     }
 }
 
+@Composable
+fun SecondScreen(onBack: () -> Unit,onNavigateToPredictionHistory: () -> Unit) {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Acesta este ecranul secundar!")
+            Spacer(modifier = Modifier.height(16.dp))
+            // Buton de Predictie
+            var predictionResult by remember { mutableStateOf<String?>(null) }
+
+            Button(onClick = {
+                fetchPrediction { result ->
+                    predictionResult = result
+                }
+            }) {
+                Text("Predictie S&P 500")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+// Afișează predicția dacă există
+            predictionResult?.let {
+                Text(text = "$it",
+                    color = Color.Black,
+                    modifier = Modifier
+                        .padding(start = 24.dp)  // mutăm 24dp spre dreapta
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = onNavigateToPredictionHistory) {
+                Text("Istoric Predictii")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onBack) {
+                Text("Înapoi")
+            }
+
+        }
+    }
+}
+
+@Composable
+fun PredictionHistoryScreen(onBack: () -> Unit) {
+    var predictions by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
+
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
+        if (userId != null) {
+            val db = FirebaseFirestore.getInstance()
+            db.collection("users").document(userId).collection("predictions").get()
+                .addOnSuccessListener { result ->
+                    val loadedPredictions = result.documents.map { document ->
+                        val date = document.getString("date") ?: ""
+                        val price = document.getDouble("predictedPrice") ?: 0.0
+                        date to price
+                    }
+                    predictions = loadedPredictions
+                }
+        }
+    }
+
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Istoric Predictii", style = MaterialTheme.typography.titleLarge)
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        LazyColumn {
+            items(predictions) { (date, price) ->
+                Text(text = "Data: $date -> Preț: $price USD")
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(onClick = onBack) {
+            Text("Înapoi")
+        }
+    }
+}
 
 
 @Composable
