@@ -62,6 +62,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+
 
 data class Stock(
     val symbol: String = "",
@@ -385,31 +392,71 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
 
 @Composable
-fun LoginRegisterChoiceScreen(onNavigateToLogin: () -> Unit, onNavigateToRegister: () -> Unit) {
-    val context = LocalContext.current
-    var predictionResult by remember { mutableStateOf<String?>(null) } // Stocăm răspunsul API
+fun LoginRegisterChoiceScreen(
+    onNavigateToLogin: () -> Unit,
+    onNavigateToRegister: () -> Unit
+) {
+    val background = painterResource(id = R.drawable.stock_background_good)
 
-    Column(
-        modifier = Modifier
-            .background(Color(0xFFE1BEE7))
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    Box(
+        modifier = Modifier.fillMaxSize()
     ) {
+        // Background image
+        Image(
+            painter = background,
+            contentDescription = null,
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier.fillMaxSize()
+        )
 
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(onClick = { onNavigateToLogin() }) {
-            Text("Login")
+        // ✅ Place title inside Box so align works
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+        ) {
+            Text(
+                text = "Stocks Prices & Predictions",
+                color = Color(0xFFFFD700), // Gold color
+                fontSize = 36.sp,
+                lineHeight = 44.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.TopCenter) // ✅ Now valid
+                    .padding(top = 170.dp)       // 🔼 Adjust vertical position here
+            )
         }
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { onNavigateToRegister() }) {
-            Text("Register")
+
+        // Buttons Column
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 350.dp, start = 32.dp, end = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Button(
+                onClick = onNavigateToLogin,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEC407A))
+            ) {
+                Text("Login", color = Color.White)
+            }
+
+            Button(
+                onClick = onNavigateToRegister,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAB47BC))
+            ) {
+                Text("Register", color = Color.White)
+            }
         }
     }
 }
+
+
+
 
 fun fetchPrediction(onResult: (String) -> Unit) {
     CoroutineScope(Dispatchers.IO).launch {
@@ -548,50 +595,66 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit) {
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
 
-    Column(
-        modifier = Modifier
-            .background(Color(0xFFE1BEE7))
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        TextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Button(
-            onClick = {
-                auth.signInWithEmailAndPassword(email, password)
-                    .addOnCompleteListener { task ->
-                        if (task.isSuccessful) {
-                            onLoginSuccess()
-                        } else {
-                            errorMessage = "Authentication failed: ${task.exception?.message}"
-                        }
-                    }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Login")
-        }
+    val background = painterResource(id = R.drawable.loginpage)
 
-        if (errorMessage.isNotEmpty()) {
-            Text(text = errorMessage, color = Color.Red)
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // 🔹 Background Image
+        Image(
+            painter = background,
+            contentDescription = "Login Background",
+            contentScale = ContentScale.Crop, // or .FillBounds if needed
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // 🔹 Foreground Content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            TextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    auth.signInWithEmailAndPassword(email, password)
+                        .addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                onLoginSuccess()
+                            } else {
+                                errorMessage = "Authentication failed: ${task.exception?.message}"
+                            }
+                        }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Login")
+            }
+
+            if (errorMessage.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = errorMessage, color = Color.Red)
+            }
         }
     }
 }
+
 
 @Composable
 fun RegisterScreen(auth: FirebaseAuth, onRegisterSuccess: () -> Unit) {
