@@ -63,12 +63,14 @@ import java.util.Date
 import java.util.Locale
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
-
+import java.util.Calendar
 
 data class Stock(
     val symbol: String = "",
@@ -157,14 +159,16 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                             "LoginScreen" -> {
                                 LoginScreen(
                                     auth = auth,
-                                    onLoginSuccess = { currentScreen = "MainScreen" }
+                                    onLoginSuccess = { currentScreen = "MainScreen" },
+                                    onNavigateToRegister = { currentScreen = "RegisterScreen" }
                                 )
                             }
 
                             "RegisterScreen" -> {
                                 RegisterScreen(
                                     auth = auth,
-                                    onRegisterSuccess = { currentScreen = "LoginRegisterChoice" }
+                                    onRegisterSuccess = { currentScreen = "LoginRegisterChoice" },
+                                    onNavigateToLogin = { currentScreen = "LoginScreen" }
                                 )
                             }
 
@@ -181,7 +185,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                             "SecondScreen" -> {
                                 SecondScreen(
                                     onBack = { currentScreen = "MainScreen" },
-                                    onNavigateToPredictionHistory = { currentScreen = "PredictionHistory" }
+                                    onNavigateToPredictionHistory = { currentScreen = "PredictionHistory" },
+                                    onNavigateToNewScreen = { currentScreen = "NewScreen" }
                                 )
                             }
 
@@ -190,6 +195,23 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                                     onBack = { currentScreen = "SecondScreen" }
                                 )
                             }
+                            "NewScreen" -> {
+                                NewScreen(
+                                    onBack = { currentScreen = "SecondScreen" },
+                                    onNavigateToPredictionComparison = { currentScreen = "PredictionComparison" },
+                                    onNavigateToLeaderboard = { currentScreen = "Leaderboard" }
+
+                                )
+                            }
+                            "PredictionComparison" -> {
+                                PredictionComparisonScreen(onBack = { currentScreen = "NewScreen" })
+                            }
+                            "Leaderboard" -> {
+                                LeaderboardScreen(onBack = { currentScreen = "NewScreen" })
+                            }
+
+
+
                         }
                     }
                 }
@@ -472,8 +494,8 @@ fun fetchPrediction(onResult: (String) -> Unit) {
                 val predictedPrice = jsonResponse.getDouble("predicted_price")
                 val message = jsonResponse.getString("message")
 
-                // 🔵 Data de azi
-                val date = SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).format(Date())
+                // 🔵 Data și ora completă (ex: 06-06-2025 14:26:53)
+                val timestamp = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.getDefault()).format(Date())
 
                 // 🔵 Obținem userId-ul utilizatorului curent
                 val userId = FirebaseAuth.getInstance().currentUser?.uid
@@ -481,24 +503,18 @@ fun fetchPrediction(onResult: (String) -> Unit) {
                     val db = FirebaseFirestore.getInstance()
                     val predictionsRef = db.collection("users").document(userId).collection("predictions")
                     val predictionData = hashMapOf(
-                        "date" to date,
+                        "timestamp" to timestamp,
                         "predictedPrice" to predictedPrice
                     )
 
-                    // 🔵 Verificăm dacă există deja predicție pentru acea zi
-                    predictionsRef.document(date).get().addOnSuccessListener { documentSnapshot ->
-                        if (!documentSnapshot.exists()) {
-                            predictionsRef.document(date).set(predictionData)
-                                .addOnSuccessListener {
-                                    Log.d("Prediction", "Predicția a fost salvată în contul utilizatorului!")
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e("Prediction", "Eroare la salvare: ${e.message}")
-                                }
-                        } else {
-                            Log.d("Prediction", "Predicția pentru $date există deja în contul utilizatorului.")
+                    // 🔵 Salvăm fiecare predicție sub documentul identificat de timestamp
+                    predictionsRef.document(timestamp).set(predictionData)
+                        .addOnSuccessListener {
+                            Log.d("Prediction", "Predicția a fost salvată cu timestamp!")
                         }
-                    }
+                        .addOnFailureListener { e ->
+                            Log.e("Prediction", "Eroare la salvare: ${e.message}")
+                        }
                 } else {
                     Log.e("Prediction", "Eroare: utilizatorul nu este autentificat!")
                 }
@@ -590,7 +606,7 @@ fun checkPermissionAndSendNotifications(context: Context, increasedStocks: List<
 }
 
 @Composable
-fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit) {
+fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegister: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
@@ -606,6 +622,11 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit) {
             contentDescription = "Login Background",
             contentScale = ContentScale.Crop, // or .FillBounds if needed
             modifier = Modifier.fillMaxSize()
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = 0.4f))
         )
 
         // 🔹 Foreground Content
@@ -646,6 +667,22 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit) {
             ) {
                 Text("Login")
             }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Nu ai cont? Înregistrează-te",
+                    fontSize = 23.sp,
+                    color = Color(0xFFEC407A),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onNavigateToRegister() }
+                )
+            }
+
+
 
             if (errorMessage.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(8.dp))
@@ -657,70 +694,107 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit) {
 
 
 @Composable
-fun RegisterScreen(auth: FirebaseAuth, onRegisterSuccess: () -> Unit) {
+fun RegisterScreen(
+    auth: FirebaseAuth,
+    onRegisterSuccess: () -> Unit,
+    onNavigateToLogin: () -> Unit
+) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
 
-    Column(
-        modifier = Modifier
-            .background(Color(0xFFE1BEE7))
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        TextField(
-            value = email,
-            onValueChange = { email = it },
-            label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth()
+    Box(modifier = Modifier.fillMaxSize()) {
+        // 🖼️ Fundalul
+        Image(
+            painter = painterResource(id = R.drawable.registerpage),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.matchParentSize()
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(Color.Black.copy(alpha = 0.4f))
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextField(
-            value = confirmPassword,
-            onValueChange = { confirmPassword = it },
-            label = { Text("Confirm Password") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Button(
-            onClick = {
-                if (password == confirmPassword) {
-                    auth.createUserWithEmailAndPassword(email, password)
-                        .addOnCompleteListener { task ->
-                            if (task.isSuccessful) {
-                                auth.signOut()
-                                onRegisterSuccess()
-                            } else {
-                                errorMessage = "Registration failed: ${task.exception?.message}"
-                            }
-                        }
-                } else {
-                    errorMessage = "Passwords do not match!"
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
+        // 🧱 Conținutul
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Text("Register")
-        }
+            TextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
 
-        if (errorMessage.isNotEmpty()) {
-            Text(text = errorMessage, color = Color.Red)
+            TextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            TextField(
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it },
+                label = { Text("Confirm Password") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    if (password == confirmPassword) {
+                        auth.createUserWithEmailAndPassword(email, password)
+                            .addOnCompleteListener { task ->
+                                if (task.isSuccessful) {
+                                    auth.signOut()
+                                    onRegisterSuccess()
+                                } else {
+                                    errorMessage = "Registration failed: ${task.exception?.message}"
+                                }
+                            }
+                    } else {
+                        errorMessage = "Passwords do not match!"
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Register")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Ai deja cont? Loghează-te",
+                    fontSize = 23.sp,
+                    color = Color(0xFFEC407A),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onNavigateToLogin() }
+                )
+            }
+
+            if (errorMessage.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = errorMessage, color = Color.Red)
+            }
         }
     }
 }
+
 
 @Composable
 fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadStocks: () -> Unit,onNavigateToSecondScreen: () -> Unit) {
@@ -729,7 +803,19 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
     var thresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
 
     val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+        val today = sdf.format(Date())
 
+        updateLeaderboardForDate(today) { success ->
+            if (success) {
+                Toast.makeText(context, "Clasamentul a fost actualizat!", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Eroare la actualizarea clasamentului.", Toast.LENGTH_SHORT)
+                    .show()
+            }
+        }
+    }
     // Gestionăm luminozitatea și nivelul de lumină
     val currentLightLevel = remember { mutableStateOf(lightLevel) }
     val currentScreenBrightness = remember { mutableStateOf(screenBrightness / 100f) }
@@ -755,7 +841,11 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
 
     DisposableEffect(context) {
         lightSensor?.let {
-            sensorManager.registerListener(lightSensorListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+            sensorManager.registerListener(
+                lightSensorListener,
+                it,
+                SensorManager.SENSOR_DELAY_NORMAL
+            )
         }
         onDispose {
             sensorManager.unregisterListener(lightSensorListener)
@@ -790,88 +880,123 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
                 thresholdSettingsOpen = false // Închide ecranul de setări
             }
         )
-    }
-    else {
-        Column(
-            modifier = Modifier
-                .background(Color(0xFFE1BEE7))
-                .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Button(onClick = onNavigateToSecondScreen) { // 👈 folosește direct callback-ul
-                Text("Mergi la Second Screen")
-            }
+    } else {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 1. Imaginea de fundal
+            Image(
+                painter = painterResource(id = R.drawable.mainscreen), // asigură-te că ai mainscreen.jpg în res/drawable
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop
+            )
 
+            // 2. Overlay negru semi-transparent
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+            )
 
-            Text(text = "Welcome, $name!")
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(text = "Light Level: %.2f lux".format(currentLightLevel.value))
-            Text(text = "Screen Brightness: %.3f%%".format(currentScreenBrightness.value * 100))
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(text = modeText.value)
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { thresholdSettingsOpen = true }) {
-                Text("Set Stock Thresholds")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Buton pentru notificări prag fix de +2%/-2%
-            Button(onClick = {
-                // Filtrăm stocurile care au crescut sau scăzut cu 2% sau mai mult
-                val increasedStocks = stocks.filter { it.percentageChange >= 2.0 }
-                val decreasedStocks = stocks.filter { it.percentageChange <= -2.0 }
-
-                // Trimitem notificările folosind funcția sendNotification
-                sendNotification(
-                    context = context,
-                    increasedStocks = increasedStocks,
-                    decreasedStocks = decreasedStocks
-                )
-            }) {
-                Text("Send Notifications for 2% Threshold")
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(onClick = {
-                val filteredIncreasedStocks = stocks.filter { stock ->
-                    val threshold = thresholds[stock.symbol] ?: 0.0
-                    stock.percentageChange >= threshold && stock.percentageChange > 0
+            // 3. Conținutul principal
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Button(onClick = onNavigateToSecondScreen) {
+                    Text("Mergi la Second Screen")
                 }
 
-                val filteredDecreasedStocks = stocks.filter { stock ->
-                    val threshold = thresholds[stock.symbol] ?: 0.0
-                    stock.percentageChange <= threshold && stock.percentageChange < 0
+                Text(text = "Welcome, $name!", color = Color.White)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Light Level: %.2f lux".format(currentLightLevel.value),
+                    color = Color.White
+                )
+                Text(
+                    text = "Screen Brightness: %.3f%%".format(currentScreenBrightness.value * 100),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(text = modeText.value, color = Color.White)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = { thresholdSettingsOpen = true }) {
+                    Text("Set Stock Thresholds")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(onClick = {
+                    val increasedStocks = stocks.filter { it.percentageChange >= 2.0 }
+                    val decreasedStocks = stocks.filter { it.percentageChange <= -2.0 }
+
+                    sendNotification(
+                        context = context,
+                        increasedStocks = increasedStocks,
+                        decreasedStocks = decreasedStocks
+                    )
+                }) {
+                    Text("Send Notifications for 2% Threshold")
                 }
 
-                checkPermissionAndSendNotificationsCustomized(
-                    context = context,
-                    increasedStocks = filteredIncreasedStocks, // Transmite lista de obiecte Stock
-                    decreasedStocks = filteredDecreasedStocks  // Transmite lista de obiecte Stock
-                )
-            }) {
-                Text("Send Notifications")
-            }
+                Spacer(modifier = Modifier.height(16.dp))
 
+                Button(onClick = {
+                    val filteredIncreasedStocks = stocks.filter { stock ->
+                        val threshold = thresholds[stock.symbol] ?: 0.0
+                        stock.percentageChange >= threshold && stock.percentageChange > 0
+                    }
+
+                    val filteredDecreasedStocks = stocks.filter { stock ->
+                        val threshold = thresholds[stock.symbol] ?: 0.0
+                        stock.percentageChange <= threshold && stock.percentageChange < 0
+                    }
+
+                    checkPermissionAndSendNotificationsCustomized(
+                        context = context,
+                        increasedStocks = filteredIncreasedStocks,
+                        decreasedStocks = filteredDecreasedStocks
+                    )
+                }) {
+                    Text("Send Notifications")
+                }
+            }
         }
-
     }
 }
 
+
+
+
 @Composable
-fun SecondScreen(onBack: () -> Unit,onNavigateToPredictionHistory: () -> Unit) {
+fun SecondScreen(
+    onBack: () -> Unit,
+    onNavigateToPredictionHistory: () -> Unit,
+    onNavigateToNewScreen: () -> Unit
+) {
     val context = LocalContext.current
+    var predictionResult by remember { mutableStateOf<String?>(null) }
+
     Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+        modifier = Modifier.fillMaxSize()
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Acesta este ecranul secundar!")
+        // Background image
+        Image(
+            painter = painterResource(id = R.drawable.secondscreen),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Foreground UI content
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxSize().padding(16.dp)
+        ) {
+            Text("Acesta este ecranul secundar!", color = Color.White)
             Spacer(modifier = Modifier.height(16.dp))
-            // Buton de Predictie
-            var predictionResult by remember { mutableStateOf<String?>(null) }
 
             Button(onClick = {
                 fetchPrediction { result ->
@@ -883,14 +1008,14 @@ fun SecondScreen(onBack: () -> Unit,onNavigateToPredictionHistory: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-// Afișează predicția dacă există
             predictionResult?.let {
-                Text(text = "$it",
-                    color = Color.Black,
-                    modifier = Modifier
-                        .padding(start = 24.dp)  // mutăm 24dp spre dreapta
+                Text(
+                    text = "$it",
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 24.dp)
                 )
             }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = onNavigateToPredictionHistory) {
@@ -898,61 +1023,404 @@ fun SecondScreen(onBack: () -> Unit,onNavigateToPredictionHistory: () -> Unit) {
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = onNavigateToNewScreen) {
+                Text("Mergi la ecranul nou")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Button(onClick = onBack) {
                 Text("Înapoi")
             }
-
         }
     }
 }
 
+
+
+
 @Composable
 fun PredictionHistoryScreen(onBack: () -> Unit) {
     var predictions by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
-
     val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         val userId = FirebaseAuth.getInstance().currentUser?.uid
         if (userId != null) {
             val db = FirebaseFirestore.getInstance()
-            db.collection("users").document(userId).collection("predictions").get()
+            db.collection("users").document(userId).collection("predictions")
+                .get()
                 .addOnSuccessListener { result ->
-                    val loadedPredictions = result.documents.map { document ->
-                        val date = document.getString("date") ?: ""
-                        val price = document.getDouble("predictedPrice") ?: 0.0
-                        date to price
-                    }
+                    val loadedPredictions = result.documents.mapNotNull { document ->
+                        val timestamp = document.getString("timestamp") ?: document.id
+                        val price = document.getDouble("predictedPrice") ?: return@mapNotNull null
+                        timestamp to price
+                    }.sortedByDescending { it.first }
                     predictions = loadedPredictions
                 }
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Background image
+        Image(
+            painter = painterResource(id = R.drawable.historicalscreen),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Istoric Predictii", style = MaterialTheme.typography.titleLarge)
+        // Foreground content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "Istoric Predictii",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White // Better contrast
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        LazyColumn {
-            items(predictions) { (date, price) ->
-                Text(text = "Data: $date -> Preț: $price USD")
-                Spacer(modifier = Modifier.height(8.dp))
+            LazyColumn {
+                items(predictions) { (timestamp, price) ->
+                    Text(
+                        "Data și ora: $timestamp → Preț: ${"%.2f".format(price)} USD",
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Button(onClick = onBack) {
-            Text("Înapoi")
+            Button(onClick = onBack) {
+                Text("Înapoi")
+            }
         }
     }
 }
+
+
+
+@Composable
+fun NewScreen(
+    onBack: () -> Unit,
+    onNavigateToPredictionComparison: () -> Unit,
+    onNavigateToLeaderboard: () -> Unit
+) {
+    val context = LocalContext.current
+    val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+    val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+    val tomorrowDateStr = sdf.format(tomorrow.time)
+
+    var userPrediction by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Background image
+        Image(
+            painter = painterResource(id = R.drawable.predictionscreen),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Foreground UI
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Preziceți prețul pentru data $tomorrowDateStr",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            TextField(
+                value = userPrediction,
+                onValueChange = { userPrediction = it },
+                label = { Text("Introduceți prețul prezis") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = {
+                val currentUser = FirebaseAuth.getInstance().currentUser
+                val userId = currentUser?.uid
+                val email = currentUser?.email ?: "unknown"
+                val username = email.substringBefore("@")
+
+                if (userId != null && userPrediction.toDoubleOrNull() != null) {
+                    val predictionValue = userPrediction.toDouble()
+                    val db = FirebaseFirestore.getInstance()
+
+                    val predictionData = mapOf(
+                        "predictedPrice" to predictionValue,
+                        "username" to username,
+                        "timestamp" to System.currentTimeMillis()
+                    )
+
+                    db.collection("users")
+                        .document(userId)
+                        .collection("user_predictions")
+                        .document(tomorrowDateStr)
+                        .set(predictionData)
+                        .addOnSuccessListener {
+                            Toast.makeText(context, "Predicția a fost salvată!", Toast.LENGTH_SHORT).show()
+                        }
+                        .addOnFailureListener {
+                            Toast.makeText(context, "Eroare la salvarea predicției.", Toast.LENGTH_SHORT).show()
+                        }
+                } else {
+                    message = "Introduceți un număr valid."
+                }
+            }) {
+                Text("Salvează predicția")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            message?.let {
+                Text(it, color = Color.White)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(onClick = onNavigateToPredictionComparison) {
+                Text("Vezi toate diferențele între predicții și prețul real")
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(onClick = { onNavigateToLeaderboard() }) {
+                Text("Vezi Clasamentul")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = { onBack() }) {
+                Text("Înapoi la Second Screen")
+            }
+        }
+    }
+}
+
+
+
+@Composable
+fun PredictionComparisonScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+    var comparisons by remember { mutableStateOf<List<Triple<String, Double, Double>>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
+        val db = FirebaseFirestore.getInstance()
+
+        db.collection("users").document(userId).collection("user_predictions")
+            .get().addOnSuccessListener { predictionsSnapshot ->
+                val fetchedComparisons = mutableListOf<Triple<String, Double, Double>>()
+
+                for (predictionDoc in predictionsSnapshot.documents) {
+                    val date = predictionDoc.id
+                    val predictedPrice = predictionDoc.getDouble("predictedPrice") ?: continue
+
+                    db.collection("stocks").document("S&P500").get().addOnSuccessListener { stockDoc ->
+                        val actualPrice = stockDoc.getDouble("closingPrice") ?: return@addOnSuccessListener
+                        fetchedComparisons.add(Triple(date, predictedPrice, actualPrice))
+                        comparisons = fetchedComparisons.sortedBy { it.first }
+                    }
+                }
+            }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Background image
+        Image(
+            painter = painterResource(id = R.drawable.comparisonscreen),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Foreground content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                "Comparație Predicții vs Preț Real",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            LazyColumn {
+                items(comparisons) { (date, predicted, actual) ->
+                    val diff = actual - predicted
+                    Text(
+                        "Data: $date | Prezis: $predicted | Real: $actual | Dif: ${"%.2f".format(diff)} USD",
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(530.dp))
+
+            Button(onClick = onBack) {
+                Text("Înapoi")
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 60.dp), // distance from the bottom
+                contentAlignment = Alignment.BottomCenter
+            ) {
+                Text(
+                    text = "\"I've never met a dollar I didn't like\"",
+                    color = Color.White,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 28.sp,
+                        lineHeight = 36.sp
+                    ),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+
+        }
+    }
+}
+
+
+
+fun updateLeaderboardForDate(targetDate: String, onComplete: (Boolean) -> Unit) {
+    val db = FirebaseFirestore.getInstance()
+
+    db.collection("users").get().addOnSuccessListener { usersSnapshot ->
+        val stockRef = db.collection("stocks").document("S&P500")
+        stockRef.get().addOnSuccessListener { stockDoc ->
+            val actualPrice = stockDoc.getDouble("closingPrice") ?: return@addOnSuccessListener
+
+            for (userDoc in usersSnapshot.documents) {
+                val userId = userDoc.id
+                val predictionsRef = db.collection("users").document(userId)
+                    .collection("user_predictions").document(targetDate)
+
+                predictionsRef.get().addOnSuccessListener { predictionDoc ->
+                    if (predictionDoc.exists()) {
+                        val predicted = predictionDoc.getDouble("predictedPrice") ?: return@addOnSuccessListener
+                        val username = predictionDoc.getString("username") ?: "anonim"
+                        val score = kotlin.math.abs(actualPrice - predicted)
+
+                        val leaderboardEntry = mapOf(
+                            "username" to username,
+                            "score" to score
+                        )
+
+                        db.collection("leaderboard")
+                            .document(targetDate)
+                            .collection("entries")
+                            .document(userId)
+                            .set(leaderboardEntry)
+                    }
+                }
+            }
+            onComplete(true)
+        }.addOnFailureListener {
+            onComplete(false)
+        }
+    }.addOnFailureListener {
+        onComplete(false)
+    }
+}
+
+
+@Composable
+fun LeaderboardScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+    val today = sdf.format(Date())
+    var leaderboard by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
+
+    LaunchedEffect(Unit) {
+        val db = FirebaseFirestore.getInstance()
+        db.collection("leaderboard")
+            .document(today)
+            .collection("entries")
+            .get()
+            .addOnSuccessListener { snapshot ->
+                val results = snapshot.documents.mapNotNull { doc ->
+                    val username = doc.getString("username")
+                    val score = doc.getDouble("score")
+                    if (username != null && score != null) {
+                        username to score
+                    } else null
+                }.sortedBy { it.second } // scor mai mic = predicție mai precisă
+                leaderboard = results
+            }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Background image
+        Image(
+            painter = painterResource(id = R.drawable.leaderboardscreen),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Foreground content
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Clasament Predictii - $today",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            LazyColumn {
+                itemsIndexed(leaderboard) { index, (username, score) ->
+                    Text(
+                        text = "${index + 1}. $username — Diferență: ${"%.2f".format(score)} USD",
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Button(onClick = onBack) {
+                Text("Înapoi")
+            }
+        }
+    }
+}
+
+
 
 
 @Composable
@@ -963,76 +1431,90 @@ fun StockThresholdSettingsScreen(
 ) {
     var stockThresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(text = "Set Thresholds for Stocks", style = MaterialTheme.typography.titleLarge)
+        Image(
+            painter = painterResource(id = R.drawable.thresholdpage),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
 
-        LazyColumn(
-            modifier = Modifier.weight(1f)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(stocks) { stock ->
-                var sliderValue by remember { mutableStateOf(stockThresholds[stock.symbol] ?: 0.0) }
+            Text(
+                text = "Set Thresholds for Stocks",
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White // Optional: for better contrast
+            )
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(text = "${stock.symbol}: ${"%.2f".format(sliderValue)}%")
-                    Slider(
-                        value = sliderValue.toFloat(),
-                        onValueChange = { sliderValue = it.toDouble() },
-                        valueRange = -100f..100f,
-                        steps = 200,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+            LazyColumn(
+                modifier = Modifier.weight(1f)
+            ) {
+                items(stocks) { stock ->
+                    var sliderValue by remember { mutableStateOf(stockThresholds[stock.symbol] ?: 0.0) }
 
-                stockThresholds = stockThresholds.toMutableMap().apply {
-                    put(stock.symbol, sliderValue)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "${stock.symbol}: ${"%.2f".format(sliderValue)}%",
+                            color = Color.White // Optional
+                        )
+                        Slider(
+                            value = sliderValue.toFloat(),
+                            onValueChange = { sliderValue = it.toDouble() },
+                            valueRange = -100f..100f,
+                            steps = 200,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    stockThresholds = stockThresholds.toMutableMap().apply {
+                        put(stock.symbol, sliderValue)
+                    }
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(onClick = {
+                onSaveThresholds(stockThresholds)
+            }) {
+                Text("Salvează Praguri")
+            }
+
+            Button(
+                onClick = {
+                    val increasedStocks = stocks.filter { stock ->
+                        val threshold = stockThresholds[stock.symbol] ?: 0.0
+                        stock.percentageChange >= threshold && stock.percentageChange > 0
+                    }
+
+                    val decreasedStocks = stocks.filter { stock ->
+                        val threshold = stockThresholds[stock.symbol] ?: 0.0
+                        stock.percentageChange <= threshold && stock.percentageChange < 0
+                    }
+
+                    checkPermissionAndSendNotificationsCustomized(
+                        context = context,
+                        increasedStocks = increasedStocks,
+                        decreasedStocks = decreasedStocks
+                    )
+                },
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text("Trimite notificări pentru pragurile setate")
+            }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Buton pentru salvarea pragurilor
-        Button(onClick = {
-            onSaveThresholds(stockThresholds)
-        }) {
-            Text("Salvează Praguri")
-        }
-
-        // Buton pentru notificări bazate pe praguri
-        Button(
-            onClick = {
-                // Creăm liste de obiecte Stock pentru increasedStocks și decreasedStocks
-                val increasedStocks = stocks.filter { stock ->
-                    val threshold = stockThresholds[stock.symbol] ?: 0.0
-                    stock.percentageChange >= threshold && stock.percentageChange > 0
-                }
-
-                val decreasedStocks = stocks.filter { stock ->
-                    val threshold = stockThresholds[stock.symbol] ?: 0.0
-                    stock.percentageChange <= threshold && stock.percentageChange < 0
-                }
-
-                // Apelăm funcția checkPermissionAndSendNotificationsCustomized cu obiectele Stock
-                checkPermissionAndSendNotificationsCustomized(
-                    context = context,
-                    increasedStocks = increasedStocks,
-                    decreasedStocks = decreasedStocks
-                )
-            },
-            modifier = Modifier.padding(16.dp)
-        ) {
-            Text("Trimite notificări pentru pragurile setate")
-        }
-
     }
 }
 
