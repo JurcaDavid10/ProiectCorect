@@ -1,76 +1,69 @@
 package com.example.proiectcorect
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
-import java.net.URL
-import org.json.JSONObject
-
 
 import android.app.Activity
-import android.os.Bundle
-import android.util.Log
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
-import com.example.proiectcorect.ui.theme.ProiectCorectTheme
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
-import androidx.compose.foundation.layout.Column
-import androidx.compose.material3.Button
-import androidx.compose.material3.Text
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.widget.Toast
-import android.content.ContentResolver
-import android.content.Intent
 import android.net.Uri
-import android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
-
+import android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS
+import android.util.Log
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.example.proiectcorect.ui.theme.ProiectCorectTheme
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.sp
-import java.util.Calendar
 
 data class Stock(
     val symbol: String = "",
@@ -663,8 +656,10 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegis
                             }
                         }
                 },
-                modifier = Modifier.fillMaxWidth()
-            ) {
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEC407A))
+            )
+            {
                 Text("Login")
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -767,8 +762,10 @@ fun RegisterScreen(
                         errorMessage = "Passwords do not match!"
                     }
                 },
-                modifier = Modifier.fillMaxWidth()
-            ) {
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAB47BC))
+            )
+            {
                 Text("Register")
             }
 
@@ -781,7 +778,7 @@ fun RegisterScreen(
                 Text(
                     text = "Ai deja cont? Loghează-te",
                     fontSize = 23.sp,
-                    color = Color(0xFFEC407A),
+                    color = Color(0xFFAB47BC),
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable { onNavigateToLogin() }
                 )
@@ -906,7 +903,7 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
                 verticalArrangement = Arrangement.Center
             ) {
                 Button(onClick = onNavigateToSecondScreen) {
-                    Text("Mergi la Second Screen")
+                    Text("Mergi la ecranul cu predictii")
                 }
 
                 Text(text = "Welcome, $name!", color = Color.White)
@@ -995,7 +992,6 @@ fun SecondScreen(
             verticalArrangement = Arrangement.Center,
             modifier = Modifier.fillMaxSize().padding(16.dp)
         ) {
-            Text("Acesta este ecranul secundar!", color = Color.White)
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = {
@@ -1003,7 +999,7 @@ fun SecondScreen(
                     predictionResult = result
                 }
             }) {
-                Text("Predictie S&P 500")
+                Text("Predicție S&P 500")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1019,13 +1015,13 @@ fun SecondScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = onNavigateToPredictionHistory) {
-                Text("Istoric Predictii")
+                Text("Istoric Predicții")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(onClick = onNavigateToNewScreen) {
-                Text("Mergi la ecranul nou")
+                Text("Mergi la ecranul cu predicții personalizabile")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1070,6 +1066,11 @@ fun PredictionHistoryScreen(onBack: () -> Unit) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x80000000)) // Negru cu 66% opacitate
+        )
 
         // Foreground content
         Column(
@@ -1079,26 +1080,35 @@ fun PredictionHistoryScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "Istoric Predictii",
+                "Istoric Predicții",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color.White // Better contrast
+                color = Color(0xFF4A148C)   // sau alta variantă mai contrastantă
             )
+
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            LazyColumn {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f) // 🔸 Lista ia tot spațiul disponibil fără să împingă butonul
+                    .fillMaxWidth()
+            ) {
                 items(predictions) { (timestamp, price) ->
                     Text(
                         "Data și ora: $timestamp → Preț: ${"%.2f".format(price)} USD",
-                        color = Color.White
+                        color = Color(0xFF4A148C) // sau Color.Black.copy(alpha = 0.87f)
                     )
+
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = onBack) {
+            Button(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Înapoi")
             }
         }
@@ -1122,7 +1132,7 @@ fun NewScreen(
     var message by remember { mutableStateOf<String?>(null) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background image
+        // 🖼️ Background image
         Image(
             painter = painterResource(id = R.drawable.predictionscreen),
             contentDescription = null,
@@ -1130,92 +1140,139 @@ fun NewScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Foreground UI
+        // 🔳 Semi-transparent overlay for readability
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.5f))
+        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        )
+        {
+            Spacer(modifier = Modifier.height(80.dp))
             Text(
-                text = "Preziceți prețul pentru data $tomorrowDateStr",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White
+                text = "Preziceți prețul pentru data\n$tomorrowDateStr",
+                color = Color(0xFFEC407A),
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 30.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
             )
-
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(190.dp))
 
             TextField(
                 value = userPrediction,
                 onValueChange = { userPrediction = it },
-                label = { Text("Introduceți prețul prezis") },
+                label = { Text("Introduceți prețul prezis", color = Color.Black) },
+                textStyle = LocalTextStyle.current.copy(color = Color.Black),
+                colors = TextFieldDefaults.colors(
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.6f),
+                    focusedContainerColor = Color.White.copy(alpha = 0.6f),
+                    focusedIndicatorColor = Color(0xFF0D47A1),
+                    focusedLabelColor = Color.Black,
+                    cursorColor = Color(0xFF0D47A1)
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = {
-                val currentUser = FirebaseAuth.getInstance().currentUser
-                val userId = currentUser?.uid
-                val email = currentUser?.email ?: "unknown"
-                val username = email.substringBefore("@")
 
-                if (userId != null && userPrediction.toDoubleOrNull() != null) {
-                    val predictionValue = userPrediction.toDouble()
-                    val db = FirebaseFirestore.getInstance()
 
-                    val predictionData = mapOf(
-                        "predictedPrice" to predictionValue,
-                        "username" to username,
-                        "timestamp" to System.currentTimeMillis()
-                    )
 
-                    db.collection("users")
-                        .document(userId)
-                        .collection("user_predictions")
-                        .document(tomorrowDateStr)
-                        .set(predictionData)
-                        .addOnSuccessListener {
-                            Toast.makeText(context, "Predicția a fost salvată!", Toast.LENGTH_SHORT).show()
-                        }
-                        .addOnFailureListener {
-                            Toast.makeText(context, "Eroare la salvarea predicției.", Toast.LENGTH_SHORT).show()
-                        }
-                } else {
-                    message = "Introduceți un număr valid."
-                }
-            }) {
+            Button(
+                onClick = {
+                    val currentUser = FirebaseAuth.getInstance().currentUser
+                    val userId = currentUser?.uid
+                    val email = currentUser?.email ?: "unknown"
+                    val username = email.substringBefore("@")
+
+                    if (userId != null && userPrediction.toDoubleOrNull() != null) {
+                        val predictionValue = userPrediction.toDouble()
+                        val db = FirebaseFirestore.getInstance()
+
+                        val predictionData = mapOf(
+                            "predictedPrice" to predictionValue,
+                            "username" to username,
+                            "timestamp" to System.currentTimeMillis()
+                        )
+
+                        db.collection("users")
+                            .document(userId)
+                            .collection("user_predictions")
+                            .document(tomorrowDateStr)
+                            .set(predictionData)
+                            .addOnSuccessListener {
+                                Toast.makeText(context, "Predicția a fost salvată!", Toast.LENGTH_SHORT).show()
+                            }
+                            .addOnFailureListener {
+                                Toast.makeText(context, "Eroare la salvarea predicției.", Toast.LENGTH_SHORT).show()
+                            }
+                    } else {
+                        message = "Introduceți un număr valid."
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEC407A)),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
                 Text("Salvează predicția")
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             message?.let {
                 Text(it, color = Color.White)
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.weight(1f)) // împinge butoanele jos
 
-            Button(onClick = onNavigateToPredictionComparison) {
-                Text("Vezi toate diferențele între predicții și prețul real")
+            Button(
+                onClick = onNavigateToPredictionComparison,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAB47BC)),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Text(
+                    text = "Vezi diferențele între predicții și prețul real",
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center
+                )
+
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Button(onClick = { onNavigateToLeaderboard() }) {
+            Button(
+                onClick = { onNavigateToLeaderboard() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAB47BC)),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
                 Text("Vezi Clasamentul")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(onClick = { onBack() }) {
-                Text("Înapoi la Second Screen")
+            Button(
+                onClick = { onBack() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAB47BC)),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Text("Înapoi la ecranul anterior")
             }
         }
     }
 }
-
 
 
 @Composable
@@ -1262,14 +1319,21 @@ fun PredictionComparisonScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "Comparație Predicții vs Preț Real",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White
+                text = "Comparație Predicții vs Preț Real",
+                color = Color(0xFF0D47A1),
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 25.sp,              // ✅ mărime text
+                    textAlign = TextAlign.Center   // ✅ opțional pentru centru
+                ),
+                modifier = Modifier.fillMaxWidth()
             )
+
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            LazyColumn {
+            LazyColumn(
+                modifier = Modifier.weight(1f) // 🟢 face lista scrollabilă și nu afectează ce e jos
+            ) {
                 items(comparisons) { (date, predicted, actual) ->
                     val diff = actual - predicted
                     Text(
@@ -1280,31 +1344,29 @@ fun PredictionComparisonScreen(onBack: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(530.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = onBack) {
+            Button(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Înapoi")
             }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 60.dp), // distance from the bottom
-                contentAlignment = Alignment.BottomCenter
-            ) {
-                Text(
-                    text = "\"I've never met a dollar I didn't like\"",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 28.sp,
-                        lineHeight = 36.sp
-                    ),
-                    textAlign = TextAlign.Center
-                )
-            }
 
+            Spacer(modifier = Modifier.height(16.dp))
 
+            Text(
+                text = "\"I've never met a dollar I didn't like\"",
+                color = Color(0xFF0D47A1),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = 32.sp,
+                    lineHeight = 28.sp
+                ),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
+
     }
 }
 
@@ -1395,13 +1457,20 @@ fun LeaderboardScreen(onBack: () -> Unit) {
         ) {
             Text(
                 text = "Clasament Predictii - $today",
-                style = MaterialTheme.typography.titleLarge,
-                color = Color.White
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color(0xFFB71C1C),
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            LazyColumn {
+            LazyColumn(
+                modifier = Modifier.weight(1f)
+            ) {
                 itemsIndexed(leaderboard) { index, (username, score) ->
                     Text(
                         text = "${index + 1}. $username — Diferență: ${"%.2f".format(score)} USD",
@@ -1411,12 +1480,16 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Button(onClick = onBack) {
+            Button(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Înapoi")
             }
         }
+
     }
 }
 
