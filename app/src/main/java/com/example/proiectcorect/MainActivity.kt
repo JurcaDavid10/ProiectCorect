@@ -51,6 +51,7 @@ import androidx.core.content.ContextCompat
 import com.example.proiectcorect.ui.theme.ProiectCorectTheme
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +121,12 @@ class MainActivity : ComponentActivity(), SensorEventListener {
             startActivityForResult(intent, 200)
         } else {
             val initialScreen = if (auth.currentUser != null) "MainScreen" else "LoginRegisterChoice"
+            if (auth.currentUser != null) {
+                // 🔄 Actualizează real_prices imediat ce aplicația pornește și utilizatorul e logat
+                fetchPrediction(saveToUser = false) {
+                    Log.d("AutoUpdate", "real_prices actualizat fără salvare predicție")
+                }
+            }
             uploadStocksToFirestore() {
                 setContent {
                     var currentScreen by remember { mutableStateOf(initialScreen) }
@@ -473,9 +480,19 @@ fun LoginRegisterChoiceScreen(
 
 
 
-fun fetchPrediction(onResult: (String) -> Unit) {
+fun fetchPrediction(saveToUser: Boolean = true, onResult: (String) -> Unit) {
     CoroutineScope(Dispatchers.IO).launch {
         try {
+            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+            val today = Calendar.getInstance()
+            val todayFormatted = dateFormat.format(today.time)
+
+            val nextTradingDay = calculateNextTradingDay()
+            val nextTradingDateStr = dateFormat.format(nextTradingDay.time)
+
+            // Este zi nelucrătoare dacă data curentă NU e egală cu următoarea zi de tranzacționare
+            val isNonTradingDay = todayFormatted != nextTradingDateStr
+
             val url = URL("https://us-central1-proiectcorect-b09a1.cloudfunctions.net/get_stock_prediction")
             val connection = url.openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
@@ -485,22 +502,18 @@ fun fetchPrediction(onResult: (String) -> Unit) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
                 val jsonResponse = JSONObject(response)
                 val predictedPrice = jsonResponse.getDouble("predicted_price")
-                val message = jsonResponse.getString("message")
+                val originalMessage = jsonResponse.getString("message")
 
-                // 🔵 Data și ora completă (ex: 06-06-2025 14:26:53)
                 val timestamp = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.getDefault()).format(Date())
-
-                // 🔵 Obținem userId-ul utilizatorului curent
                 val userId = FirebaseAuth.getInstance().currentUser?.uid
-                if (userId != null) {
+
+                if (userId != null && saveToUser) {
                     val db = FirebaseFirestore.getInstance()
                     val predictionsRef = db.collection("users").document(userId).collection("predictions")
                     val predictionData = hashMapOf(
                         "timestamp" to timestamp,
                         "predictedPrice" to predictedPrice
                     )
-
-                    // 🔵 Salvăm fiecare predicție sub documentul identificat de timestamp
                     predictionsRef.document(timestamp).set(predictionData)
                         .addOnSuccessListener {
                             Log.d("Prediction", "Predicția a fost salvată cu timestamp!")
@@ -508,11 +521,14 @@ fun fetchPrediction(onResult: (String) -> Unit) {
                         .addOnFailureListener { e ->
                             Log.e("Prediction", "Eroare la salvare: ${e.message}")
                         }
-                } else {
-                    Log.e("Prediction", "Eroare: utilizatorul nu este autentificat!")
                 }
 
                 withContext(Dispatchers.Main) {
+                    val message = if (isNonTradingDay) {
+                        "$originalMessage\nPredicția este pentru următoarea zi de tranzacționare: $nextTradingDateStr"
+                    } else {
+                        originalMessage
+                    }
                     onResult(message)
                 }
             } else {
@@ -528,7 +544,6 @@ fun fetchPrediction(onResult: (String) -> Unit) {
         }
     }
 }
-
 
 
 
@@ -650,8 +665,27 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegis
                     auth.signInWithEmailAndPassword(email, password)
                         .addOnCompleteListener { task ->
                             if (task.isSuccessful) {
-                                onLoginSuccess()
-                            } else {
+                                val userId = auth.currentUser?.uid
+                                val email = auth.currentUser?.email ?: "unknown"
+                                val username = email.substringBefore("@")
+                                val db = FirebaseFirestore.getInstance()
+
+                                if (userId != null) {
+                                    db.collection("users").document(userId)
+                                        .set(mapOf("username" to username), SetOptions.merge())
+                                        .addOnSuccessListener {
+                                            Log.d("Firestore", "Document users/$userId creat/actualizat.")
+                                            onLoginSuccess()
+                                        }
+                                        .addOnFailureListener {
+                                            Log.e("Firestore", "Eroare la creare document user: ${it.message}")
+                                            onLoginSuccess() // Tot continuăm, dar logăm eroarea
+                                        }
+                                } else {
+                                    onLoginSuccess()
+                                }
+                            }
+                            else {
                                 errorMessage = "Authentication failed: ${task.exception?.message}"
                             }
                         }
@@ -752,9 +786,30 @@ fun RegisterScreen(
                         auth.createUserWithEmailAndPassword(email, password)
                             .addOnCompleteListener { task ->
                                 if (task.isSuccessful) {
-                                    auth.signOut()
-                                    onRegisterSuccess()
-                                } else {
+                                    val userId = auth.currentUser?.uid
+                                    val email = auth.currentUser?.email ?: "unknown"
+                                    val username = email.substringBefore("@")
+                                    val db = FirebaseFirestore.getInstance()
+
+                                    if (userId != null) {
+                                        db.collection("users").document(userId)
+                                            .set(mapOf("username" to username), SetOptions.merge())
+                                            .addOnSuccessListener {
+                                                Log.d("Firestore", "Document users/$userId creat după înregistrare.")
+                                                auth.signOut()
+                                                onRegisterSuccess()
+                                            }
+                                            .addOnFailureListener {
+                                                Log.e("Firestore", "Eroare la creare document user: ${it.message}")
+                                                auth.signOut()
+                                                onRegisterSuccess()
+                                            }
+                                    } else {
+                                        auth.signOut()
+                                        onRegisterSuccess()
+                                    }
+                                }
+                                else {
                                     errorMessage = "Registration failed: ${task.exception?.message}"
                                 }
                             }
@@ -800,19 +855,7 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
     var thresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
 
     val context = LocalContext.current
-    LaunchedEffect(Unit) {
-        val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-        val today = sdf.format(Date())
 
-        updateLeaderboardForDate(today) { success ->
-            if (success) {
-                Toast.makeText(context, "Clasamentul a fost actualizat!", Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, "Eroare la actualizarea clasamentului.", Toast.LENGTH_SHORT)
-                    .show()
-            }
-        }
-    }
     // Gestionăm luminozitatea și nivelul de lumină
     val currentLightLevel = remember { mutableStateOf(lightLevel) }
     val currentScreenBrightness = remember { mutableStateOf(screenBrightness / 100f) }
@@ -1115,6 +1158,130 @@ fun PredictionHistoryScreen(onBack: () -> Unit) {
     }
 }
 
+fun calculateNextTradingDay(): Calendar {
+    val calendar = Calendar.getInstance()
+    val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+
+    fun isStaticHoliday(date: Calendar): Boolean {
+        val formatted = sdf.format(date.time)
+        return listOf("01.01", "04.07", "25.12").any { formatted.startsWith(it) }
+    }
+
+    fun isDynamicHoliday(date: Calendar): Boolean {
+        val year = date.get(Calendar.YEAR)
+
+        val mlkDay = Calendar.getInstance().apply {
+            set(year, Calendar.JANUARY, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, 1)
+            add(Calendar.WEEK_OF_MONTH, 2)
+        }
+
+        val presidentsDay = Calendar.getInstance().apply {
+            set(year, Calendar.FEBRUARY, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, 1)
+            add(Calendar.WEEK_OF_MONTH, 2)
+        }
+
+        val memorialDay = Calendar.getInstance().apply {
+            set(year, Calendar.MAY, 31)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, -1)
+        }
+
+        val laborDay = Calendar.getInstance().apply {
+            set(year, Calendar.SEPTEMBER, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, 1)
+        }
+
+        val thanksgiving = Calendar.getInstance().apply {
+            set(year, Calendar.NOVEMBER, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.THURSDAY) add(Calendar.DAY_OF_YEAR, 1)
+            add(Calendar.WEEK_OF_MONTH, 3)
+        }
+
+        return listOf(mlkDay, presidentsDay, memorialDay, laborDay, thanksgiving)
+            .any { sdf.format(it.time) == sdf.format(date.time) }
+    }
+
+    val today = calendar.clone() as Calendar
+    val isWeekend = today.get(Calendar.DAY_OF_WEEK) in listOf(Calendar.SATURDAY, Calendar.SUNDAY)
+    val isHoliday = isStaticHoliday(today) || isDynamicHoliday(today)
+
+    if (!isWeekend && !isHoliday) {
+        return today
+    }
+
+    // Dacă azi nu e zi de trading, căutăm următoarea
+    while (true) {
+        calendar.add(Calendar.DAY_OF_YEAR, 1)
+        val dow = calendar.get(Calendar.DAY_OF_WEEK)
+        val wknd = dow == Calendar.SATURDAY || dow == Calendar.SUNDAY
+        val hld = isStaticHoliday(calendar) || isDynamicHoliday(calendar)
+
+        if (!wknd && !hld) break
+    }
+
+    return calendar
+}
+fun getLastTradingDay(): Calendar {
+    val calendar = Calendar.getInstance()
+    calendar.add(Calendar.DAY_OF_YEAR, -1)
+
+    val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+
+    fun isStaticHoliday(date: Calendar): Boolean {
+        val formatted = sdf.format(date.time)
+        return listOf("01.01", "04.07", "25.12").any { formatted.startsWith(it) }
+    }
+
+    fun isDynamicHoliday(date: Calendar): Boolean {
+        val year = date.get(Calendar.YEAR)
+
+        val mlk = Calendar.getInstance().apply {
+            set(year, Calendar.JANUARY, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, 1)
+            add(Calendar.WEEK_OF_MONTH, 2)
+        }
+
+        val presidents = Calendar.getInstance().apply {
+            set(year, Calendar.FEBRUARY, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, 1)
+            add(Calendar.WEEK_OF_MONTH, 2)
+        }
+
+        val memorial = Calendar.getInstance().apply {
+            set(year, Calendar.MAY, 31)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, -1)
+        }
+
+        val labor = Calendar.getInstance().apply {
+            set(year, Calendar.SEPTEMBER, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) add(Calendar.DAY_OF_YEAR, 1)
+        }
+
+        val thanksgiving = Calendar.getInstance().apply {
+            set(year, Calendar.NOVEMBER, 1)
+            while (get(Calendar.DAY_OF_WEEK) != Calendar.THURSDAY) add(Calendar.DAY_OF_YEAR, 1)
+            add(Calendar.WEEK_OF_MONTH, 3)
+        }
+
+        return listOf(mlk, presidents, memorial, labor, thanksgiving)
+            .any { sdf.format(it.time) == sdf.format(date.time) }
+    }
+
+    while (true) {
+        val dow = calendar.get(Calendar.DAY_OF_WEEK)
+        val isWeekend = dow == Calendar.SATURDAY || dow == Calendar.SUNDAY
+        val isHoliday = isStaticHoliday(calendar) || isDynamicHoliday(calendar)
+        if (!isWeekend && !isHoliday) break
+        calendar.add(Calendar.DAY_OF_YEAR, -1)
+    }
+
+    return calendar
+}
+
+
+
+
 
 
 @Composable
@@ -1125,8 +1292,11 @@ fun NewScreen(
 ) {
     val context = LocalContext.current
     val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-    val tomorrow = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
-    val tomorrowDateStr = sdf.format(tomorrow.time)
+    val nextTradingDay = remember {
+        calculateNextTradingDay()
+    }
+    val tomorrowDateStr = sdf.format(nextTradingDay.time)
+
 
     var userPrediction by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
@@ -1293,11 +1463,15 @@ fun PredictionComparisonScreen(onBack: () -> Unit) {
                     val date = predictionDoc.id
                     val predictedPrice = predictionDoc.getDouble("predictedPrice") ?: continue
 
-                    db.collection("stocks").document("S&P500").get().addOnSuccessListener { stockDoc ->
-                        val actualPrice = stockDoc.getDouble("closingPrice") ?: return@addOnSuccessListener
-                        fetchedComparisons.add(Triple(date, predictedPrice, actualPrice))
-                        comparisons = fetchedComparisons.sortedBy { it.first }
+                    db.collection("real_prices").document(date).get().addOnSuccessListener { stockDoc ->
+                        val actualPrice = stockDoc.getDouble("closingPrice")
+                        if (actualPrice != null) {
+                            fetchedComparisons.add(Triple(date, predictedPrice, actualPrice))
+                            val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+                            comparisons = fetchedComparisons.sortedBy { dateFormat.parse(it.first) }
+                        }
                     }
+
                 }
             }
     }
@@ -1374,22 +1548,56 @@ fun PredictionComparisonScreen(onBack: () -> Unit) {
 
 fun updateLeaderboardForDate(targetDate: String, onComplete: (Boolean) -> Unit) {
     val db = FirebaseFirestore.getInstance()
+    val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+
+    Log.d("Leaderboard", "Pornim updateLeaderboard pentru data: $targetDate")
 
     db.collection("users").get().addOnSuccessListener { usersSnapshot ->
-        val stockRef = db.collection("stocks").document("S&P500")
+        Log.d("Leaderboard", "Număr utilizatori găsiți: ${usersSnapshot.size()}")
+
+        val stockRef = db.collection("real_prices").document(targetDate)
         stockRef.get().addOnSuccessListener { stockDoc ->
-            val actualPrice = stockDoc.getDouble("closingPrice") ?: return@addOnSuccessListener
+            val actualPrice = stockDoc.getDouble("closingPrice")
+            Log.d("Leaderboard", "closingPrice extras pentru $targetDate: $actualPrice")
+
+            if (actualPrice == null) {
+                Log.e("Leaderboard", "Nu există closingPrice în real_prices/$targetDate")
+                onComplete(false)
+                return@addOnSuccessListener
+            }
+
+            val predictionDate = targetDate
+            Log.d("Leaderboard", "Vom căuta predicțiile în user_predictions/$predictionDate")
+
+            var processedUsers = 0
+            val totalUsers = usersSnapshot.size()
+            if (totalUsers == 0) {
+                Log.w("Leaderboard", "Niciun utilizator găsit.")
+                onComplete(true)
+                return@addOnSuccessListener
+            }
 
             for (userDoc in usersSnapshot.documents) {
                 val userId = userDoc.id
                 val predictionsRef = db.collection("users").document(userId)
-                    .collection("user_predictions").document(targetDate)
+                    .collection("user_predictions").document(predictionDate)
+
+                Log.d("Leaderboard", "Verificăm predicția pentru user: $userId")
 
                 predictionsRef.get().addOnSuccessListener { predictionDoc ->
                     if (predictionDoc.exists()) {
-                        val predicted = predictionDoc.getDouble("predictedPrice") ?: return@addOnSuccessListener
+                        val predicted = predictionDoc.getDouble("predictedPrice")
                         val username = predictionDoc.getString("username") ?: "anonim"
+
+                        if (predicted == null) {
+                            Log.w("Leaderboard", "Predicted price este null pentru user $userId")
+                            processedUsers++
+                            if (processedUsers == totalUsers) onComplete(true)
+                            return@addOnSuccessListener
+                        }
+
                         val score = kotlin.math.abs(actualPrice - predicted)
+                        Log.d("Leaderboard", "User $username ($userId): Predicted = $predicted, Real = $actualPrice, Score = $score")
 
                         val leaderboardEntry = mapOf(
                             "username" to username,
@@ -1401,46 +1609,82 @@ fun updateLeaderboardForDate(targetDate: String, onComplete: (Boolean) -> Unit) 
                             .collection("entries")
                             .document(userId)
                             .set(leaderboardEntry)
+                            .addOnSuccessListener {
+                                Log.d("Leaderboard", "Scor salvat pentru $username")
+                                processedUsers++
+                                if (processedUsers == totalUsers) onComplete(true)
+                            }
+                            .addOnFailureListener {
+                                Log.e("Leaderboard", "Eroare la salvare pentru $username: ${it.message}")
+                                processedUsers++
+                                if (processedUsers == totalUsers) onComplete(true)
+                            }
+                    } else {
+                        Log.w("Leaderboard", "Nu există predicție pentru user $userId în $predictionDate")
+                        processedUsers++
+                        if (processedUsers == totalUsers) onComplete(true)
                     }
+                }.addOnFailureListener {
+                    Log.e("Leaderboard", "Eroare la citirea predicției pentru $userId: ${it.message}")
+                    processedUsers++
+                    if (processedUsers == totalUsers) onComplete(true)
                 }
             }
-            onComplete(true)
         }.addOnFailureListener {
+            Log.e("Leaderboard", "Eroare la citirea prețului real pentru $targetDate: ${it.message}")
             onComplete(false)
         }
     }.addOnFailureListener {
+        Log.e("Leaderboard", "Eroare la citirea utilizatorilor: ${it.message}")
         onComplete(false)
     }
 }
+
+
+
 
 
 @Composable
 fun LeaderboardScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-    val today = sdf.format(Date())
-    var leaderboard by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
+    val today = sdf.format(Calendar.getInstance().time)
+    val lastTradingDay = remember { sdf.format(getLastTradingDay().time) }
 
-    LaunchedEffect(Unit) {
-        val db = FirebaseFirestore.getInstance()
-        db.collection("leaderboard")
-            .document(today)
-            .collection("entries")
-            .get()
-            .addOnSuccessListener { snapshot ->
-                val results = snapshot.documents.mapNotNull { doc ->
-                    val username = doc.getString("username")
-                    val score = doc.getDouble("score")
-                    if (username != null && score != null) {
-                        username to score
-                    } else null
-                }.sortedBy { it.second } // scor mai mic = predicție mai precisă
-                leaderboard = results
+    var leaderboard by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(lastTradingDay) {
+        updateLeaderboardForDate(lastTradingDay) { success ->
+            if (success) {
+                val db = FirebaseFirestore.getInstance()
+                db.collection("leaderboard")
+                    .document(lastTradingDay)
+                    .collection("entries")
+                    .get()
+                    .addOnSuccessListener { snapshot ->
+                        val results = snapshot.documents.mapNotNull { doc ->
+                            val username = doc.getString("username")
+                            val score = doc.getDouble("score")
+                            if (username != null && score != null) {
+                                username to score
+                            } else null
+                        }.sortedBy { it.second } // scor mai mic = predicție mai precisă
+                        leaderboard = results
+                        loading = false
+                    }
+                    .addOnFailureListener {
+                        Toast.makeText(context, "Eroare la încărcarea clasamentului.", Toast.LENGTH_SHORT).show()
+                        loading = false
+                    }
+            } else {
+                Toast.makeText(context, "Eroare la actualizarea clasamentului.", Toast.LENGTH_SHORT).show()
+                loading = false
             }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background image
         Image(
             painter = painterResource(id = R.drawable.leaderboardscreen),
             contentDescription = null,
@@ -1448,7 +1692,6 @@ fun LeaderboardScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxSize()
         )
 
-        // Foreground content
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1456,7 +1699,7 @@ fun LeaderboardScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Clasament Predictii - $today",
+                text = "Clasament Predicții - $today",
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Bold
@@ -1466,17 +1709,41 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(60.dp))
 
-            LazyColumn(
-                modifier = Modifier.weight(1f)
-            ) {
-                itemsIndexed(leaderboard) { index, (username, score) ->
-                    Text(
-                        text = "${index + 1}. $username — Diferență: ${"%.2f".format(score)} USD",
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Ultima zi de tranzacționare: $lastTradingDay",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 25.sp,
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = Color(0xFFB71C1C),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (loading) {
+                CircularProgressIndicator(color = Color.White)
+            } else if (leaderboard.isEmpty()) {
+                Text(
+                    text = "Nicio predicție disponibilă pentru această zi.",
+                    color = Color.White,
+                    fontSize = 18.sp
+                )
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    itemsIndexed(leaderboard) { index, (username, score) ->
+                        Text(
+                            text = "${index + 1}. $username — Diferență: ${"%.2f".format(score)} USD",
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                 }
             }
 
@@ -1489,9 +1756,10 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                 Text("Înapoi")
             }
         }
-
     }
 }
+
+
 
 
 
