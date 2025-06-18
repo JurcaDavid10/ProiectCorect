@@ -17,6 +17,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,6 +34,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -69,7 +71,8 @@ import java.util.Locale
 data class Stock(
     val symbol: String = "",
     val closingPrice: Double = 0.0,
-    val percentageChange: Double = 0.0
+    val percentageChange: Double = 0.0,
+    val currentPrice: Double
 )
 
 
@@ -83,6 +86,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     private var lightLevel = 0f // Variabilă pentru a stoca valoarea lux
     private var screenBrightness = 0 // Variabilă pentru a stoca luminozitatea ecranului
+    private lateinit var disableBrightnessAuto: MutableState<Boolean>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +97,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
         auth = FirebaseAuth.getInstance()
         firestore = FirebaseFirestore.getInstance()
+        disableBrightnessAuto = mutableStateOf(false)
 
         // 🔵 2️⃣ Aici obții token-ul FCM
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
@@ -122,13 +127,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         } else {
             val initialScreen = if (auth.currentUser != null) "MainScreen" else "LoginRegisterChoice"
             if (auth.currentUser != null) {
-                // 🔄 Actualizează real_prices imediat ce aplicația pornește și utilizatorul e logat
-                fetchPrediction(saveToUser = false) {
-                    Log.d("AutoUpdate", "real_prices actualizat fără salvare predicție")
-                }
             }
             uploadStocksToFirestore() {
                 setContent {
+                    disableBrightnessAuto = rememberSaveable { mutableStateOf(false) }
                     var currentScreen by remember { mutableStateOf(initialScreen) }
                     ProiectCorectTheme {
                         when (currentScreen) {
@@ -179,35 +181,41 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                                     lightLevel = lightLevel,
                                     screenBrightness = screenBrightness,
                                     onUploadStocks = {},
-                                    onNavigateToSecondScreen = { currentScreen = "SecondScreen" }
+                                    onNavigateToSecondScreen = { currentScreen = "SecondScreen" },
+                                    disableAutoBrightness = disableBrightnessAuto
                                 )
                             }
                             "SecondScreen" -> {
                                 SecondScreen(
                                     onBack = { currentScreen = "MainScreen" },
                                     onNavigateToPredictionHistory = { currentScreen = "PredictionHistory" },
-                                    onNavigateToNewScreen = { currentScreen = "NewScreen" }
+                                    onNavigateToNewScreen = { currentScreen = "NewScreen" },
+                                    disableAutoBrightness = disableBrightnessAuto
                                 )
                             }
 
                             "PredictionHistory" -> {
                                 PredictionHistoryScreen(
-                                    onBack = { currentScreen = "SecondScreen" }
+                                    onBack = { currentScreen = "SecondScreen" },
+                                    disableAutoBrightness = disableBrightnessAuto
                                 )
                             }
                             "NewScreen" -> {
                                 NewScreen(
                                     onBack = { currentScreen = "SecondScreen" },
                                     onNavigateToPredictionComparison = { currentScreen = "PredictionComparison" },
-                                    onNavigateToLeaderboard = { currentScreen = "Leaderboard" }
+                                    onNavigateToLeaderboard = { currentScreen = "Leaderboard" },
+                                    disableAutoBrightness = disableBrightnessAuto
 
                                 )
                             }
                             "PredictionComparison" -> {
-                                PredictionComparisonScreen(onBack = { currentScreen = "NewScreen" })
+                                PredictionComparisonScreen(onBack = { currentScreen = "NewScreen" },
+                                    disableAutoBrightness = disableBrightnessAuto)
                             }
                             "Leaderboard" -> {
-                                LeaderboardScreen(onBack = { currentScreen = "NewScreen" })
+                                LeaderboardScreen(onBack = { currentScreen = "NewScreen" },
+                                    disableAutoBrightness = disableBrightnessAuto)
                             }
 
 
@@ -239,12 +247,15 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     // Implementarea metodei onSensorChanged pentru a detecta nivelul de lumină
     override fun onSensorChanged(event: SensorEvent?) {
         if (event != null && event.sensor.type == Sensor.TYPE_LIGHT) {
-            lightLevel = event.values[0]  // Valoarea luminii ambientale (lux)
+            lightLevel = event.values[0]
 
-            // Ajustăm luminozitatea ecranului în funcție de nivelul luminii ambientale
-            adjustScreenBrightness(lightLevel)
+            // 🛑 Luminozitatea este ajustată DOAR dacă utilizatorul nu a dezactivat-o
+            if (disableBrightnessAuto?.value == false) {
+                adjustScreenBrightness(lightLevel)
+            }
         }
     }
+
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
         // Nu este necesar să gestionăm schimbările de acuratețe
@@ -253,20 +264,18 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     // Ajustăm luminozitatea ecranului în funcție de nivelul luminii ambientale
     private fun adjustScreenBrightness(lightLevel: Float) {
         val brightness = when {
-            lightLevel < 10 -> 255  // Lumină scăzută -> luminositate mare
-            lightLevel > 100 -> 50  // Lumină puternică -> luminositate scăzută
-            else -> (255 * (1 - (lightLevel / 100))).toInt()  // Calculăm o valoare intermediară
+            lightLevel < 10 -> 255
+            lightLevel > 100 -> 50
+            else -> (255 * (1 - (lightLevel / 100))).toInt()
         }
 
-        // Aplicăm modificările la setările de luminiscență
         val layoutParams = window.attributes
-        layoutParams.screenBrightness =
-            brightness / 255f  // Transformăm valoarea într-un interval între 0 și 1
+        layoutParams.screenBrightness = brightness / 255f
         window.attributes = layoutParams
 
-        // Calculăm valoarea procentuală și o afișăm
-        screenBrightness = (brightness / 255f * 100).toInt()  // Luminozitatea în procente
+        screenBrightness = (brightness / 255f * 100).toInt()
     }
+
 
     fun listenForStockUpdates() {
         val db = FirebaseFirestore.getInstance()
@@ -275,7 +284,8 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 val stocks = snapshot.documents.map { document ->
                     Stock(
                         symbol = document.getString("symbol") ?: "",
-                        percentageChange = document.getDouble("percentageChange") ?: 0.0
+                        percentageChange = document.getDouble("percentageChange") ?: 0.0,
+                        currentPrice = document.getDouble("currentPrice") ?: 0.0  // ✅ adăugat
                     )
                 }
 
@@ -305,7 +315,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     }
 
     fun uploadStocksToFirestore(onComplete: () -> Unit) {
-        val stockSymbols = listOf("AAPL","GOOGL","TWTR","TSLA","UBER")
+        val stockSymbols = listOf("AAPL","GOOGL","META","TSLA","UBER","NVDA","AMZN","MSFT","NFLX", "ADBE","INTC","JPM")
         val stockRepository = StockRepository()
 
         stockRepository.fetchStockData(
@@ -350,7 +360,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                             .set(
                                 mapOf(
                                     "symbol" to stock.symbol,
-                                    "closingPrice" to stock.closingPrice,
+                                    "currentPrice" to stock.closingPrice,
                                     "percentageChange" to stock.percentageChange
                                 )
                             )
@@ -525,7 +535,7 @@ fun fetchPrediction(saveToUser: Boolean = true, onResult: (String) -> Unit) {
 
                 withContext(Dispatchers.Main) {
                     val message = if (isNonTradingDay) {
-                        "$originalMessage\nPredicția este pentru următoarea zi de tranzacționare: $nextTradingDateStr"
+                        "Predicția este pentru următoarea zi de tranzacționare: $nextTradingDateStr\nPreț prezis: $predictedPrice"
                     } else {
                         originalMessage
                     }
@@ -550,68 +560,7 @@ fun fetchPrediction(saveToUser: Boolean = true, onResult: (String) -> Unit) {
 
 
 
-// Funcția actualizată pentru trimiterea notificărilor
-fun sendNotification(context: Context, increasedStocks: List<Stock>, decreasedStocks: List<Stock>) {
-    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val channelId = "stock_notifications"
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val channel = NotificationChannel(
-            channelId, "Stock Notifications", NotificationManager.IMPORTANCE_DEFAULT
-        )
-        notificationManager.createNotificationChannel(channel)
-    }
-
-    // Notificare pentru stocurile care au crescut
-    if (increasedStocks.isNotEmpty()) {
-        val increasedMessage = "The following stocks have increased by 2% or more:\n" +
-                increasedStocks.joinToString("\n") { "${it.symbol} +${it.percentageChange}%" } // Adăugăm și procentul
-        val increasedNotification = NotificationCompat.Builder(context, channelId)
-            .setContentTitle("Stocks Increased")
-            .setContentText(increasedMessage)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(increasedMessage))
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setAutoCancel(true)
-            .build()
-
-        notificationManager.notify("increased_stocks".hashCode(), increasedNotification)
-    }
-
-    // Notificare pentru stocurile care au scăzut
-    if (decreasedStocks.isNotEmpty()) {
-        val decreasedMessage = "The following stocks have decreased by 2% or more:\n" +
-                decreasedStocks.joinToString("\n") { "${it.symbol} ${it.percentageChange}%" } // Adăugăm și procentul
-        val decreasedNotification = NotificationCompat.Builder(context, channelId)
-            .setContentTitle("Stocks Decreased")
-            .setContentText(decreasedMessage)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(decreasedMessage))
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setAutoCancel(true)
-            .build()
-
-        notificationManager.notify("decreased_stocks".hashCode(), decreasedNotification)
-    }
-}
-
-
-
-// Funcția de verificare a permisiunilor și trimiterea notificărilor
-fun checkPermissionAndSendNotifications(context: Context, increasedStocks: List<Stock>, decreasedStocks: List<Stock>) {
-    if (ContextCompat.checkSelfPermission(
-            context,
-            android.Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED) {
-        sendNotification(context, increasedStocks, decreasedStocks)
-    } else {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(
-                context as? MainActivity ?: return,
-                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                1
-            )
-        }
-    }
-}
 
 @Composable
 fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegister: () -> Unit) {
@@ -675,6 +624,10 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegis
                                         .set(mapOf("username" to username), SetOptions.merge())
                                         .addOnSuccessListener {
                                             Log.d("Firestore", "Document users/$userId creat/actualizat.")
+                                            // 🔄 Actualizează real_prices imediat ce aplicația pornește și utilizatorul e logat
+                                            fetchPrediction(saveToUser = false) {
+                                                Log.d("AutoUpdate", "real_prices actualizat fără salvare predicție")
+                                            }
                                             onLoginSuccess()
                                         }
                                         .addOnFailureListener {
@@ -849,7 +802,7 @@ fun RegisterScreen(
 
 
 @Composable
-fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadStocks: () -> Unit,onNavigateToSecondScreen: () -> Unit) {
+fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadStocks: () -> Unit,onNavigateToSecondScreen: () -> Unit,disableAutoBrightness: MutableState<Boolean>) {
     var stocks by remember { mutableStateOf<List<Stock>>(emptyList()) }
     var thresholdSettingsOpen by remember { mutableStateOf(false) }
     var thresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
@@ -893,9 +846,16 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
     }
 
     val window = (context as Activity).window
-    val layoutParams = window.attributes
-    layoutParams.screenBrightness = currentScreenBrightness.value
-    window.attributes = layoutParams
+    LaunchedEffect(disableAutoBrightness.value) {
+        val layoutParams = window.attributes
+        layoutParams.screenBrightness = if (disableAutoBrightness.value) {
+            1f // maximă (manual)
+        } else {
+            WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE // automat
+        }
+        window.attributes = layoutParams
+    }
+
 
     LaunchedEffect(Unit) {
         val db = FirebaseFirestore.getInstance()
@@ -903,7 +863,8 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
             val loadedStocks = result.documents.map { document ->
                 Stock(
                     symbol = document.getString("symbol") ?: "",
-                    percentageChange = document.getDouble("percentageChange") ?: 0.0
+                    percentageChange = document.getDouble("percentageChange") ?: 0.0,
+                    currentPrice = document.getDouble("currentPrice") ?: 0.0  // ✅ adăugat
                 )
             }
             stocks = loadedStocks
@@ -918,7 +879,8 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
                 thresholds = newThresholds
                 saveThresholdsToFirestore(newThresholds) // Opțional: Salvează în Firestore
                 thresholdSettingsOpen = false // Închide ecranul de setări
-            }
+            },
+            disableAutoBrightness = disableAutoBrightness
         )
     } else {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -943,64 +905,69 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
                     .fillMaxSize()
                     .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                verticalArrangement = Arrangement.Top
             ) {
-                Button(onClick = onNavigateToSecondScreen) {
-                    Text("Mergi la ecranul cu predictii")
-                }
-
-                Text(text = "Welcome, $name!", color = Color.White)
+                Spacer(modifier = Modifier.height(90.dp))
+                Text(text = "Welcome, $name!",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     text = "Light Level: %.2f lux".format(currentLightLevel.value),
-                    color = Color.White
+                    color = Color.White,
+                    fontSize = 18.sp
                 )
                 Text(
                     text = "Screen Brightness: %.3f%%".format(currentScreenBrightness.value * 100),
-                    color = Color.White
+                    color = Color.White,
+                    fontSize = 18.sp
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(text = modeText.value, color = Color.White)
+                Text(text = modeText.value,
+                    color = Color.White,
+                    fontSize = 18.sp)
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(onClick = onNavigateToSecondScreen) {
+                    Text("Mergi la ecranul cu predicții")
+                }
+
+
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = { thresholdSettingsOpen = true }) {
-                    Text("Set Stock Thresholds")
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(onClick = {
-                    val increasedStocks = stocks.filter { it.percentageChange >= 2.0 }
-                    val decreasedStocks = stocks.filter { it.percentageChange <= -2.0 }
-
-                    sendNotification(
-                        context = context,
-                        increasedStocks = increasedStocks,
-                        decreasedStocks = decreasedStocks
-                    )
-                }) {
-                    Text("Send Notifications for 2% Threshold")
+                    Text("Setează pragurile")
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Button(onClick = {
-                    val filteredIncreasedStocks = stocks.filter { stock ->
-                        val threshold = thresholds[stock.symbol] ?: 0.0
-                        stock.percentageChange >= threshold && stock.percentageChange > 0
-                    }
 
-                    val filteredDecreasedStocks = stocks.filter { stock ->
-                        val threshold = thresholds[stock.symbol] ?: 0.0
-                        stock.percentageChange <= threshold && stock.percentageChange < 0
-                    }
-
-                    checkPermissionAndSendNotificationsCustomized(
-                        context = context,
-                        increasedStocks = filteredIncreasedStocks,
-                        decreasedStocks = filteredDecreasedStocks
-                    )
-                }) {
-                    Text("Send Notifications")
+                Button(
+                    onClick = {
+                        disableAutoBrightness.value = true
+                        Toast.makeText(context, "Luminozitatea automată a fost dezactivată.", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Dezactivează luminozitatea automată pentru următoarele ecrane")
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        disableAutoBrightness.value = false
+                        Toast.makeText(context, "Luminozitatea automată a fost reactivată.", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Reactivează luminozitatea automată pentru următoarele ecrane")
+                }
+
+
+
+
             }
         }
     }
@@ -1013,10 +980,21 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
 fun SecondScreen(
     onBack: () -> Unit,
     onNavigateToPredictionHistory: () -> Unit,
-    onNavigateToNewScreen: () -> Unit
+    onNavigateToNewScreen: () -> Unit,
+    disableAutoBrightness: MutableState<Boolean>
 ) {
+
     val context = LocalContext.current
     var predictionResult by remember { mutableStateOf<String?>(null) }
+    val window = (LocalContext.current as Activity).window
+    LaunchedEffect(Unit) {
+        if (disableAutoBrightness.value) {
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = 1f
+            window.attributes = layoutParams
+        }
+    }
+
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -1080,9 +1058,17 @@ fun SecondScreen(
 
 
 @Composable
-fun PredictionHistoryScreen(onBack: () -> Unit) {
+fun PredictionHistoryScreen(onBack: () -> Unit,disableAutoBrightness: MutableState<Boolean>) {
     var predictions by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
     val context = LocalContext.current
+    val window = (LocalContext.current as Activity).window
+    LaunchedEffect(Unit) {
+        if (disableAutoBrightness.value) {
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = 1f
+            window.attributes = layoutParams
+        }
+    }
 
     LaunchedEffect(Unit) {
         val userId = FirebaseAuth.getInstance().currentUser?.uid
@@ -1288,8 +1274,11 @@ fun getLastTradingDay(): Calendar {
 fun NewScreen(
     onBack: () -> Unit,
     onNavigateToPredictionComparison: () -> Unit,
-    onNavigateToLeaderboard: () -> Unit
+    onNavigateToLeaderboard: () -> Unit,
+    disableAutoBrightness: MutableState<Boolean>
 ) {
+    val formatter = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.getDefault())
+    val timestampFormatted = formatter.format(Date())
     val context = LocalContext.current
     val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
     val nextTradingDay = remember {
@@ -1300,6 +1289,15 @@ fun NewScreen(
 
     var userPrediction by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    val window = (LocalContext.current as Activity).window
+    LaunchedEffect(Unit) {
+        if (disableAutoBrightness.value) {
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = 1f
+            window.attributes = layoutParams
+        }
+    }
+
 
     Box(modifier = Modifier.fillMaxSize()) {
         // 🖼️ Background image
@@ -1370,7 +1368,7 @@ fun NewScreen(
                         val predictionData = mapOf(
                             "predictedPrice" to predictionValue,
                             "username" to username,
-                            "timestamp" to System.currentTimeMillis()
+                            "timestamp" to timestampFormatted
                         )
 
                         db.collection("users")
@@ -1446,10 +1444,19 @@ fun NewScreen(
 
 
 @Composable
-fun PredictionComparisonScreen(onBack: () -> Unit) {
+fun PredictionComparisonScreen(onBack: () -> Unit, disableAutoBrightness: MutableState<Boolean>) {
     val context = LocalContext.current
     val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
     var comparisons by remember { mutableStateOf<List<Triple<String, Double, Double>>>(emptyList()) }
+    val window = (LocalContext.current as Activity).window
+    LaunchedEffect(Unit) {
+        if (disableAutoBrightness.value) {
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = 1f
+            window.attributes = layoutParams
+        }
+    }
+
 
     LaunchedEffect(Unit) {
         val userId = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
@@ -1548,7 +1555,7 @@ fun PredictionComparisonScreen(onBack: () -> Unit) {
 
 fun updateLeaderboardForDate(targetDate: String, onComplete: (Boolean) -> Unit) {
     val db = FirebaseFirestore.getInstance()
-    val dateFormat = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
+    val formatter = SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale.getDefault())
 
     Log.d("Leaderboard", "Pornim updateLeaderboard pentru data: $targetDate")
 
@@ -1598,10 +1605,18 @@ fun updateLeaderboardForDate(targetDate: String, onComplete: (Boolean) -> Unit) 
 
                         val score = kotlin.math.abs(actualPrice - predicted)
                         Log.d("Leaderboard", "User $username ($userId): Predicted = $predicted, Real = $actualPrice, Score = $score")
+                        val timestampRaw = predictionDoc.get("timestamp")
+                        val timestampStr = when (timestampRaw) {
+                            is String -> timestampRaw
+                            else -> ""
+                        }
+                        val timeMillis  = try { formatter.parse(timestampStr)?.time ?: Long.MAX_VALUE }
+                        catch (e: Exception) { Long.MAX_VALUE }
 
                         val leaderboardEntry = mapOf(
                             "username" to username,
-                            "score" to score
+                            "score"    to score,
+                            "time"     to timeMillis          // 🔸 îl salvăm ca Long
                         )
 
                         db.collection("leaderboard")
@@ -1645,14 +1660,25 @@ fun updateLeaderboardForDate(targetDate: String, onComplete: (Boolean) -> Unit) 
 
 
 @Composable
-fun LeaderboardScreen(onBack: () -> Unit) {
+fun LeaderboardScreen(onBack: () -> Unit,disableAutoBrightness: MutableState<Boolean>) {
     val context = LocalContext.current
     val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
     val today = sdf.format(Calendar.getInstance().time)
     val lastTradingDay = remember { sdf.format(getLastTradingDay().time) }
 
-    var leaderboard by remember { mutableStateOf<List<Pair<String, Double>>>(emptyList()) }
+    var leaderboard by remember {
+        mutableStateOf<List<Pair<String, Pair<Double, Long>>>>(emptyList())
+    }
     var loading by remember { mutableStateOf(true) }
+    val window = (LocalContext.current as Activity).window
+    LaunchedEffect(Unit) {
+        if (disableAutoBrightness.value) {
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = 1f
+            window.attributes = layoutParams
+        }
+    }
+
 
     LaunchedEffect(lastTradingDay) {
         updateLeaderboardForDate(lastTradingDay) { success ->
@@ -1665,11 +1691,14 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                     .addOnSuccessListener { snapshot ->
                         val results = snapshot.documents.mapNotNull { doc ->
                             val username = doc.getString("username")
-                            val score = doc.getDouble("score")
+                            val score    = doc.getDouble("score")
+                            val time     = doc.getLong("time") ?: Long.MAX_VALUE
                             if (username != null && score != null) {
-                                username to score
+                                username to (score to time)
                             } else null
-                        }.sortedBy { it.second } // scor mai mic = predicție mai precisă
+                        }
+                            .sortedWith(compareBy<Pair<String, Pair<Double, Long>>> { it.second.first }
+                            .thenBy { it.second.second }) // dacă scorul e egal, sortăm după timestamp (primul intrat)
                         leaderboard = results
                         loading = false
                     }
@@ -1736,7 +1765,8 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                 LazyColumn(
                     modifier = Modifier.weight(1f)
                 ) {
-                    itemsIndexed(leaderboard) { index, (username, score) ->
+                    itemsIndexed(leaderboard) { index, (username, scoreAndTime) ->
+                        val score = scoreAndTime.first
                         Text(
                             text = "${index + 1}. $username — Diferență: ${"%.2f".format(score)} USD",
                             fontSize = 18.sp,
@@ -1744,6 +1774,7 @@ fun LeaderboardScreen(onBack: () -> Unit) {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                     }
+
                 }
             }
 
@@ -1768,9 +1799,18 @@ fun LeaderboardScreen(onBack: () -> Unit) {
 fun StockThresholdSettingsScreen(
     stocks: List<Stock>,
     context: Context,
-    onSaveThresholds: (Map<String, Double>) -> Unit
+    onSaveThresholds: (Map<String, Double>) -> Unit,
+    disableAutoBrightness: MutableState<Boolean>
 ) {
     var stockThresholds by remember { mutableStateOf<Map<String, Double>>(emptyMap()) }
+    val window = (LocalContext.current as Activity).window
+    LaunchedEffect(Unit) {
+        if (disableAutoBrightness.value) {
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = 1f
+            window.attributes = layoutParams
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -1908,7 +1948,7 @@ fun sendNotificationsCustomized(
     // Notificare pentru stocurile care au crescut
     if (increasedStocks.isNotEmpty()) {
         val stockUpdatesIncreased = increasedStocks.joinToString(separator = "\n") {
-            "${it.symbol} +${it.percentageChange}%"  // Afișăm și procentul
+            "${it.symbol} ${String.format("%+.2f", it.percentageChange)}%  (${it.currentPrice} USD)"
         }
         val notificationIncreased = NotificationCompat.Builder(context, "channel_02")
             .setContentTitle("Stockuri care au crescut cu o valoare mai mare decât pragul minim")
@@ -1924,7 +1964,7 @@ fun sendNotificationsCustomized(
     // Notificare pentru stocurile care au scăzut
     if (decreasedStocks.isNotEmpty()) {
         val stockUpdatesDecreased = decreasedStocks.joinToString(separator = "\n") {
-            "${it.symbol} ${it.percentageChange}%"  // Afișăm și procentul
+            "${it.symbol} ${String.format("%+.2f", it.percentageChange)}%  (${it.currentPrice} USD)"
         }
         val notificationDecreased = NotificationCompat.Builder(context, "channel_02")
             .setContentTitle("Stockuri care au scăzut cu o valoare mai mare decât pragul minim")

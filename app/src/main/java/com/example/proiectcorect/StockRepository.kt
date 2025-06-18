@@ -112,9 +112,10 @@ class StockRepository {
                             val stockSymbol = symbol
                             val latestClosePrice = stockResponse.pc.toDouble() // Previous close price
                             val changePercentage = stockResponse.dp // Percentage change
+                            val currentPrice = stockResponse.c.toDouble() // Current price
 
                             // Add stock data to the list
-                            stocks.add(Stock(stockSymbol, latestClosePrice, changePercentage))
+                            stocks.add(Stock(stockSymbol, latestClosePrice, changePercentage, currentPrice))
                             Log.d("StockRepository", "Stock added: $stockSymbol, Change: $changePercentage%")
                         } else {
                             Log.e("StockRepository", "Response body is null for $symbol")
