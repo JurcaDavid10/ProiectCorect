@@ -14,7 +14,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Log.d("FCM", "Token nou: $token")
-        // 🔵 Poți să-l salvezi în Firestore dacă vrei
+
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -32,7 +32,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle(remoteMessage.notification?.title ?: "Stock Alert!")
             .setContentText(remoteMessage.notification?.body ?: "Prag atins!")
-            .setSmallIcon(R.drawable.ic_notification) // Înlocuiește cu iconița ta reală
+            .setSmallIcon(R.drawable.ic_notification)
             .setAutoCancel(true)
             .build()
 

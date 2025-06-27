@@ -38,7 +38,7 @@
             </intent-filter>
         </activity>
 
-        <!-- 🔵 Adaugă aici serviciul FirebaseMessaging -->
+        <!-- Serviciul FirebaseMessaging -->
         <service
             android:name=".MyFirebaseMessagingService"
             android:exported="false">

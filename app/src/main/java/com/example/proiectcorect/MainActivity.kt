@@ -99,13 +99,13 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         firestore = FirebaseFirestore.getInstance()
         disableBrightnessAuto = mutableStateOf(false)
 
-        // 🔵 2️⃣ Aici obții token-ul FCM
+        //  Aici obțin token-ul FCM
         FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
             if (task.isSuccessful) {
                 val token = task.result
                 Log.d("FCM", "Token-ul FCM este: $token")
 
-                // 🔵 Salvăm token-ul sub documentul utilizatorului curent (în colecția "users")
+                //  Salvez token-ul sub documentul utilizatorului curent (în colecția "users")
                 val userId = FirebaseAuth.getInstance().currentUser?.uid
                 if (userId != null) {
                     val db = FirebaseFirestore.getInstance()
@@ -135,7 +135,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     ProiectCorectTheme {
                         when (currentScreen) {
                             "LoginRegisterChoice" -> {
-                                // Dezactivează senzorul de lumină
+                                // Dezactivez senzorul de lumină
                                 sensorManager.unregisterListener(this)
 
                                 LoginRegisterChoiceScreen(
@@ -232,7 +232,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
     override fun onResume() {
         super.onResume()
-        // Înregistrăm listener-ul pentru senzorul de lumină
+        // Înregistrez listener-ul pentru senzorul de lumină
         lightSensor?.also { light ->
             sensorManager.registerListener(this, light, SensorManager.SENSOR_DELAY_UI)
         }
@@ -249,7 +249,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         if (event != null && event.sensor.type == Sensor.TYPE_LIGHT) {
             lightLevel = event.values[0]
 
-            // 🛑 Luminozitatea este ajustată DOAR dacă utilizatorul nu a dezactivat-o
+            //  Luminozitatea este ajustată DOAR dacă utilizatorul nu a dezactivat-o
             if (disableBrightnessAuto?.value == false) {
                 adjustScreenBrightness(lightLevel)
             }
@@ -258,10 +258,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
 
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // Nu este necesar să gestionăm schimbările de acuratețe
+        // Nu este necesar să gestionez schimbările de acuratețe
     }
 
-    // Ajustăm luminozitatea ecranului în funcție de nivelul luminii ambientale
+    // Ajustez luminozitatea ecranului în funcție de nivelul luminii ambientale
     private fun adjustScreenBrightness(lightLevel: Float) {
         val brightness = when {
             lightLevel < 10 -> 255
@@ -285,7 +285,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     Stock(
                         symbol = document.getString("symbol") ?: "",
                         percentageChange = document.getDouble("percentageChange") ?: 0.0,
-                        currentPrice = document.getDouble("currentPrice") ?: 0.0  // ✅ adăugat
+                        currentPrice = document.getDouble("currentPrice") ?: 0.0  //  adăugat
                     )
                 }
 
@@ -344,7 +344,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 }
             }
 
-            // 🔵 Upload la stocks
+            //  Upload la stocks
             stocksCollection.get().addOnSuccessListener { querySnapshot ->
                 val batch = firestore.batch()
                 for (document in querySnapshot.documents) {
@@ -382,7 +382,7 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                 }
             }
 
-            // 🔵 Upload la stocksthreshold (cu aceleași simboluri corecte)
+            //  Upload la stocksthreshold (cu aceleași simboluri corecte)
             stockThresholdCollection.get().addOnSuccessListener { querySnapshot ->
                 val batch = firestore.batch()
                 for (document in querySnapshot.documents) {
@@ -433,7 +433,7 @@ fun LoginRegisterChoiceScreen(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Background image
+        // Imagine de fundal
         Image(
             painter = background,
             contentDescription = null,
@@ -441,25 +441,24 @@ fun LoginRegisterChoiceScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // ✅ Place title inside Box so align works
         Box(
             modifier = Modifier
                 .fillMaxSize()
         ) {
             Text(
-                text = "Stocks Prices & Predictions",
+                text = "Stock Guardian",
                 color = Color(0xFFFFD700), // Gold color
                 fontSize = 36.sp,
                 lineHeight = 44.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 modifier = Modifier
-                    .align(Alignment.TopCenter) // ✅ Now valid
-                    .padding(top = 170.dp)       // 🔼 Adjust vertical position here
+                    .align(Alignment.TopCenter)
+                    .padding(top = 170.dp)
             )
         }
 
-        // Buttons Column
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -573,11 +572,10 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegis
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // 🔹 Background Image
         Image(
             painter = background,
             contentDescription = "Login Background",
-            contentScale = ContentScale.Crop, // or .FillBounds if needed
+            contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
         Box(
@@ -586,7 +584,7 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegis
                 .background(Color.Black.copy(alpha = 0.4f))
         )
 
-        // 🔹 Foreground Content
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -624,7 +622,7 @@ fun LoginScreen(auth: FirebaseAuth, onLoginSuccess: () -> Unit,onNavigateToRegis
                                         .set(mapOf("username" to username), SetOptions.merge())
                                         .addOnSuccessListener {
                                             Log.d("Firestore", "Document users/$userId creat/actualizat.")
-                                            // 🔄 Actualizează real_prices imediat ce aplicația pornește și utilizatorul e logat
+                                            //  Actualizează real_prices imediat ce aplicația pornește și utilizatorul e logat
                                             fetchPrediction(saveToUser = false) {
                                                 Log.d("AutoUpdate", "real_prices actualizat fără salvare predicție")
                                             }
@@ -687,7 +685,6 @@ fun RegisterScreen(
     var errorMessage by remember { mutableStateOf("") }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 🖼️ Fundalul
         Image(
             painter = painterResource(id = R.drawable.registerpage),
             contentDescription = null,
@@ -699,7 +696,6 @@ fun RegisterScreen(
                 .matchParentSize()
                 .background(Color.Black.copy(alpha = 0.4f))
         )
-        // 🧱 Conținutul
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -809,7 +805,7 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
 
     val context = LocalContext.current
 
-    // Gestionăm luminozitatea și nivelul de lumină
+    // Gestionez luminozitatea și nivelul de lumină
     val currentLightLevel = remember { mutableStateOf(lightLevel) }
     val currentScreenBrightness = remember { mutableStateOf(screenBrightness / 100f) }
     val modeText = remember { mutableStateOf("Bright Mode") }
@@ -864,7 +860,7 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
                 Stock(
                     symbol = document.getString("symbol") ?: "",
                     percentageChange = document.getDouble("percentageChange") ?: 0.0,
-                    currentPrice = document.getDouble("currentPrice") ?: 0.0  // ✅ adăugat
+                    currentPrice = document.getDouble("currentPrice") ?: 0.0  //  adăugat
                 )
             }
             stocks = loadedStocks
@@ -884,22 +880,19 @@ fun MainScreen(name: String, lightLevel: Float, screenBrightness: Int, onUploadS
         )
     } else {
         Box(modifier = Modifier.fillMaxSize()) {
-            // 1. Imaginea de fundal
             Image(
-                painter = painterResource(id = R.drawable.mainscreen), // asigură-te că ai mainscreen.jpg în res/drawable
+                painter = painterResource(id = R.drawable.mainscreen),
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
                 contentScale = ContentScale.Crop
             )
 
-            // 2. Overlay negru semi-transparent
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .background(Color.Black.copy(alpha = 0.4f))
             )
 
-            // 3. Conținutul principal
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -999,7 +992,6 @@ fun SecondScreen(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Background image
         Image(
             painter = painterResource(id = R.drawable.secondscreen),
             contentDescription = null,
@@ -1007,7 +999,6 @@ fun SecondScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Foreground UI content
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -1088,7 +1079,6 @@ fun PredictionHistoryScreen(onBack: () -> Unit,disableAutoBrightness: MutableSta
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background image
         Image(
             painter = painterResource(id = R.drawable.historicalscreen),
             contentDescription = null,
@@ -1098,10 +1088,9 @@ fun PredictionHistoryScreen(onBack: () -> Unit,disableAutoBrightness: MutableSta
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0x80000000)) // Negru cu 66% opacitate
+                .background(Color(0x80000000))
         )
 
-        // Foreground content
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1111,7 +1100,7 @@ fun PredictionHistoryScreen(onBack: () -> Unit,disableAutoBrightness: MutableSta
             Text(
                 "Istoric Predicții",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color(0xFF4A148C)   // sau alta variantă mai contrastantă
+                color = Color(0xFFFFF9C4) // un galben pal contrastant (Lemon Chiffon)
             )
 
 
@@ -1119,13 +1108,13 @@ fun PredictionHistoryScreen(onBack: () -> Unit,disableAutoBrightness: MutableSta
 
             LazyColumn(
                 modifier = Modifier
-                    .weight(1f) // 🔸 Lista ia tot spațiul disponibil fără să împingă butonul
+                    .weight(1f)
                     .fillMaxWidth()
             ) {
                 items(predictions) { (timestamp, price) ->
                     Text(
                         "Data și ora: $timestamp → Preț: ${"%.2f".format(price)} USD",
-                        color = Color(0xFF4A148C) // sau Color.Black.copy(alpha = 0.87f)
+                        color = Color(0xFFFFF9C4) // un galben pal contrastant (Lemon Chiffon)
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -1300,7 +1289,6 @@ fun NewScreen(
 
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 🖼️ Background image
         Image(
             painter = painterResource(id = R.drawable.predictionscreen),
             contentDescription = null,
@@ -1308,7 +1296,6 @@ fun NewScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 🔳 Semi-transparent overlay for readability
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1484,15 +1471,12 @@ fun PredictionComparisonScreen(onBack: () -> Unit, disableAutoBrightness: Mutabl
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Background image
         Image(
             painter = painterResource(id = R.drawable.comparisonscreen),
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-
-        // Foreground content
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1503,8 +1487,8 @@ fun PredictionComparisonScreen(onBack: () -> Unit, disableAutoBrightness: Mutabl
                 text = "Comparație Predicții vs Preț Real",
                 color = Color(0xFF0D47A1),
                 style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 25.sp,              // ✅ mărime text
-                    textAlign = TextAlign.Center   // ✅ opțional pentru centru
+                    fontSize = 25.sp,
+                    textAlign = TextAlign.Center
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -1513,13 +1497,13 @@ fun PredictionComparisonScreen(onBack: () -> Unit, disableAutoBrightness: Mutabl
             Spacer(modifier = Modifier.height(16.dp))
 
             LazyColumn(
-                modifier = Modifier.weight(1f) // 🟢 face lista scrollabilă și nu afectează ce e jos
+                modifier = Modifier.weight(1f)
             ) {
                 items(comparisons) { (date, predicted, actual) ->
                     val diff = actual - predicted
                     Text(
                         "Data: $date | Prezis: $predicted | Real: $actual | Dif: ${"%.2f".format(diff)} USD",
-                        color = Color.White
+                        color = Color(0xFFFFF9C4) // un galben pal contrastant (Lemon Chiffon)
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -1616,7 +1600,7 @@ fun updateLeaderboardForDate(targetDate: String, onComplete: (Boolean) -> Unit) 
                         val leaderboardEntry = mapOf(
                             "username" to username,
                             "score"    to score,
-                            "time"     to timeMillis          // 🔸 îl salvăm ca Long
+                            "time"     to timeMillis  //  îl salvez ca Long
                         )
 
                         db.collection("leaderboard")
@@ -1698,7 +1682,7 @@ fun LeaderboardScreen(onBack: () -> Unit,disableAutoBrightness: MutableState<Boo
                             } else null
                         }
                             .sortedWith(compareBy<Pair<String, Pair<Double, Long>>> { it.second.first }
-                            .thenBy { it.second.second }) // dacă scorul e egal, sortăm după timestamp (primul intrat)
+                            .thenBy { it.second.second }) // dacă scorul e egal, sortez după timestamp (primul intrat)
                         leaderboard = results
                         loading = false
                     }
@@ -1833,7 +1817,7 @@ fun StockThresholdSettingsScreen(
             Text(
                 text = "Set Thresholds for Stocks",
                 style = MaterialTheme.typography.titleLarge,
-                color = Color.White // Optional: for better contrast
+                color = Color.White
             )
 
             LazyColumn(
@@ -1906,7 +1890,6 @@ fun StockThresholdSettingsScreen(
 fun saveThresholdsToFirestore(thresholds: Map<String, Double>) {
     val db = FirebaseFirestore.getInstance()
 
-    // 🔵 Actualizăm colecția „stockthreshold” (sau „stock_thresholds” – alege una!)
     val thresholdsCollection = db.collection("stocksthreshold")
 
     thresholds.forEach { (symbol, threshold) ->
@@ -1922,8 +1905,8 @@ fun saveThresholdsToFirestore(thresholds: Map<String, Double>) {
 
 fun sendNotificationsCustomized(
     context: Context,
-    increasedStocks: List<Stock>,  // Modificat pentru a include și procentul
-    decreasedStocks: List<Stock>   // Modificat pentru a include și procentul
+    increasedStocks: List<Stock>,
+    decreasedStocks: List<Stock>
 ) {
     // Verificare permisiune pentru notificări (Android 13+)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -1983,8 +1966,8 @@ fun sendNotificationsCustomized(
 
 fun checkPermissionAndSendNotificationsCustomized(
     context: Context,
-    increasedStocks: List<Stock>,   // Modificat pentru a accepta lista de obiecte Stock
-    decreasedStocks: List<Stock>    // Modificat pentru a accepta lista de obiecte Stock
+    increasedStocks: List<Stock>,
+    decreasedStocks: List<Stock>
 ) {
     if (ContextCompat.checkSelfPermission(
             context,
